@@ -17,6 +17,7 @@ import rospy
 import moveit_commander
 import moveit_msgs.msg
 import geometry_msgs.msg
+import octomap
 
 
 class Initialise:
@@ -74,6 +75,47 @@ class Initialise:
         right_arm_plan.go()
         left_arm_plan.go()
 
+    def kinect_setup(self):
+        """
+        Function to setup the kinect topic. As well as the Octomap
+        :return:
+        """
+
+
+        depth_image, _ = freenect.sync_get_depth()
+        depth_image = depth_image.astype(np.uint8)
+
+
+        tree = octomap.OcTree(depth_image)
+        view_free = False
+
+        itr = tree.begin_tree()
+        root_size = itr.getSize()
+        op =[]
+        fp = []
+        so = []
+        sf = []
+
+        for i in itr:
+            if i.isLeaf():
+                so.append(i.getSize() / root_size)
+                op.append(i.getCoordinate())
+            else:
+                if view_free:
+                    sf.append(i.getSize() / root_size)
+                    fp.append(i.getCoordinate())
+
+        op = zip(*op)
+        fp = zip(*fp)
+        points3d(op[0], op[1], op[2], so, opacity=1.0, mode='cube',
+                 color=(0, 0, 1), scale_mode='scalar', scale_factor=root_size)
+
+        if view_free:
+            points3d(fp[0], fp[1], fp[2], sf, opacity=0.3, mode='cube',
+                     color=(0, 1, 0), scale_mode='scalar', scale_factor=root_size)
+        show()
+
+
 
 def create_pose_target(w, x, y, z):
     """
@@ -95,8 +137,9 @@ def main():
     # Run the Initialise class to setup Baxter and the environment
     baxter = Initialise()
 
-    # Run a test move to show that the script is running correctly
-    baxter.test_movement()
+    while 1:
+        # Run a test move to show that the script is running correctly
+        baxter.kinect_setup()
 
 if __name__ == '__main__':
     main()
