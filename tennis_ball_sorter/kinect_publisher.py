@@ -1,40 +1,26 @@
 __author__ = 'rhys'
-import argparse
-import math
-import random
 import cv2
 import freenect
-import rospy
-import numpy as np
 
-from std_msgs.msg import (
-    UInt16,
-)
-
-import baxter_interface
-
-from baxter_interface import CHECK_VERSION
-
-def get_kinect_depth():
+def get_kinect_rgb():
     """
-    Get the depth image from the kinect
+    Gets the rgb feed from the Kinect
+    :return: Returns Array, the RGB image
     """
-    array, _ = freenect.sync_get_depth()
-    array = array.astype(np.uint8)
+    array,_ = freenect.sync_get_video()
+    array = cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
     return array
-
-def kinect_publisher():
-    """
-    Publisher for the kinect data
-    """
-    depth_image = get_kinect_depth()
-    pub = rospy.Publisher('kinect_depth', uint8, queue_size=10)
-    rospy.init_node('kinect')
-    r = rospy.Rate(10)
-    while not rospy.is_shutdown():
-        pub.publish(depth_image)
-        r.sleep()
 
 
 if __name__ == '__main__':
-    kinect_publisher()
+    while 1:
+
+        # Display the image and loop
+        image = get_kinect_rgb()
+        cv2.imshow('RGB image', image)
+
+        k = cv2.waitKey(5) & 0xFF
+        if k ==27:
+            break
+
+    cv2.destroyAllWindows()
