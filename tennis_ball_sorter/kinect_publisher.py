@@ -12,12 +12,17 @@ def get_kinect_rgb():
     return array
 
 
+def draw_rectangle(img):
+    cv2.rectangle(img, (200, 100), (400, 300), (0, 0, 255), 2)
+    return img
+
 if __name__ == '__main__':
     while 1:
 
         # Display the image and loop
         image = get_kinect_rgb()
-        cv2.imshow('RGB image', image)
+        r_image = draw_rectangle(image)
+        cv2.imshow('RGB image', r_image)
 
         k = cv2.waitKey(5) & 0xFF
         if k ==27:
