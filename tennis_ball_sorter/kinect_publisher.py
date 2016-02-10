@@ -1,65 +1,31 @@
+import sys
+import rospy
 import cv2
-import freenect
-
-from PIL import Image
-from numpy import *
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
 import numpy as np
 
 
-def get_kinect_rgb():
-    """
-    Gets the rgb feed from the Kinect
-    :return: Returns Array, the RGB image
-    """
-    array,_ = freenect.sync_get_video()
-    array = cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
-    return array
+class image_converter:
+    def __init__(self):
+        self.bridge = CvBridge()
+        self.image_sub = rospy.Subscriber("camera/depth/image", Image, self.callback)
 
-def pca(frame):
-    # Get dimensions
-    num_data, dim = frame.shape
+    def callback(self, data):
+        depth_image = self.bridge.imgmsg_to_cv2(data, "16UC1")
+        depth_array = np.array(depth_image, dtype=np.float32)
+        cv2.normalize(depth_array, depth_array, 0, 255, cv2.NORM_MINMAX)
 
-    # Centre Data
-    mean_frame = frame.mean(axis=0)
-    for i in range(num_data):
-        frame[i] -= mean_frame
+        cv2.imshow("Depth", depth_array)
+        cv2.waitKey(3)
 
-    # Compute the covariance matrix
-    cov_m = dot(frame, frame.T)
-
-    # Get Eigenvalues and Eigenvectors
-    eig_v, eig_Ve = linalg.eigh(cov_m)
-
-    tmp = dot(frame.T, eig_Ve).T
-    V = tmp[::-1]
-    S = sqrt(e)[::-1]
-
-    return V, S, mean_frame
+def main(args):
+    ic = image_converter()
+    rospy.init_node('image_converter', anonymous=True)
+    try:
+        rospy.spin()
+    except KeyboardInterrupt:
+        print "Shutting down"
 
 if __name__ == '__main__':
-    while 1:
-
-        # Display the image and loop
-        image = get_kinect_rgb()
-        crop_img = image
-
-        # Crop the image for the recognition box
-        crop_img = crop_img[140:300, 240:400]
-        cv2.imshow('cropped image', crop_img)
-
-        # Add a red rectangle, showing the copped region
-        cv2.rectangle(image, (240, 140), (400, 300), (0, 0, 255), 2)
-        cv2.imshow('RGB image', image)
-
-        # Perform PCA
-
-        #matrix = np.array(crop_img)
-        matrix = crop_img.flatten()
-        matrix = np.reshape(matrix, (-1, 3))
-        V, S, m_mean = pca(matrix)
-
-        k = cv2.waitKey(5) & 0xFF
-        if k == 27:
-            break
-
-    cv2.destroyAllWindows()
+    main(sys.argv)
