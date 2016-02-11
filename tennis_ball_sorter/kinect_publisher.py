@@ -20,20 +20,20 @@ class Depth_Image:
         :param data:
         :return:
         """
-        # Convert the received image to a CV image and normalise it to grey scale
+        # Convert the received image to a CV image and normalise it to grayscale
         depth_image = self.bridge.imgmsg_to_cv2(data, "16UC1")
         depth_array = np.array(depth_image, dtype=np.float32)
-        #depth_array = cv2.cvtColor(depth_array, cv2.COLOR_GRAY2BGR)
         cv2.normalize(depth_array, depth_array, 0, 1, cv2.NORM_MINMAX)
 
         # Perform thresholding on the image to remove all objects behind a plain
-        ret, bin_img = cv2.threshold(depth_array, 0.3, 1, cv2.THRESH_BINARY)
+        ret, bin_img = cv2.threshold(depth_array, 0.3, 1, cv2.THRESH_BINARY_INV)
 
-        # Detect any objects on the plain
-        #contours, hierachy = cv2.findContours(bin_img, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        # cv2.drawContours(bin_img, contours, -1, (0,255,0), 3)
+        # Erode the image a few times in order to separate close objects
+        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        err_img = cv2.erode(bin_img, element, iterations=10)
 
-        # Show the binary image
+        # Show the images
+        cv2.imshow("Errode", err_img)
         cv2.imshow("Depth", bin_img)
         cv2.waitKey(3)
 
