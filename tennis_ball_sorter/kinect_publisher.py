@@ -1,6 +1,7 @@
 import sys
 import rospy
 import cv2
+import cv
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import numpy as np
@@ -9,7 +10,7 @@ import numpy as np
 class Depth_Image:
     def __init__(self):
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber("camera/depth/image_raw", Image, self.callback)
+        self.image_sub = rospy.Subscriber("camera/depth_registered/image", Image, self.callback)
         rospy.init_node('image_converter', anonymous=True)
         rospy.spin()
 
@@ -32,8 +33,13 @@ class Depth_Image:
         element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
         err_img = cv2.erode(bin_img, element, iterations=10)
 
+        # err_img.astype(cv2.CV_32FC1)
+
+        # im2, contours, hierarchy = cv2.findContours(err_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # cv2.drawContours(err_img, contours, -1, (0, 255, 0), 3)
+
         # Show the images
-        cv2.imshow("Errode", err_img)
+        cv2.imshow("Erode", err_img)
         cv2.imshow("Depth", bin_img)
         cv2.waitKey(3)
 
