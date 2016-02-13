@@ -10,7 +10,7 @@ import numpy as np
 class Depth_Image:
     def __init__(self):
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber("camera/depth_registered/image", Image, self.callback)
+        self.image_sub = rospy.Subscriber("camera/depth/image", Image, self.callback)
         rospy.init_node('image_converter', anonymous=True)
         rospy.spin()
 
@@ -33,12 +33,15 @@ class Depth_Image:
         element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
         err_img = cv2.erode(bin_img, element, iterations=10)
 
-        # err_img.astype(cv2.CV_32FC1)
+        # Create a new array of type uint8 for the findContours function 
+        con_img = np.array(err_img, dtype=np.uint8)
 
-        # im2, contours, hierarchy = cv2.findContours(err_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        # cv2.drawContours(err_img, contours, -1, (0, 255, 0), 3)
+        # Find the contours of the image and then draw them on
+        contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(con_img, contours, -1, (128, 255, 0), 3)
 
-        # Show the images
+        # Show the produced images
+        cv2.imshow('Contours', con_img)
         cv2.imshow("Erode", err_img)
         cv2.imshow("Depth", bin_img)
         cv2.waitKey(3)
