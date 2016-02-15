@@ -9,12 +9,23 @@ import numpy as np
 
 class Object_Detection:
     def __init__(self):
+        self.rgb_img = None
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber("camera/depth/image", Image, self.callback)
-        rospy.init_node('image_converter', anonymous=True)
+        rgb_sub = rospy.Subscriber("camera/rgb/image_color", Image, self.callback_rgb)
+        depth_sub = rospy.Subscriber("camera/depth/image", Image, self.callback_depth)
+
+        rospy.init_node('depth_viewer', anonymous=True)
         rospy.spin()
 
-    def callback(self, data):
+    def callback_rgb(self, data):
+        """
+        Function to save image to a variable in the class
+        :param data:
+        :return:
+        """
+        self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
+
+    def callback_depth(self, data):
         """
         Use the data received from the topic.
         Convert to CV image and then perform thresholding to identify objects
@@ -49,16 +60,44 @@ class Object_Detection:
         contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(con_img, contours, -1, (128, 255, 0), 3)
 
-        # Use the contours to draw a rectangle around the object
         for x in range(0, len(contours)):
             x, y, w, h = cv2.boundingRect(contours[x])
             cv2.rectangle(con_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
 
-        # Show the produced images
+        # Show the colour images of the objects
+        self.show_colour(contours)
+
+        # Show the Depth image and objects images
         cv2.imshow('Contours', con_img)
         cv2.imshow("Depth", bin_img)
         cv2.waitKey(3)
 
+    def show_colour(self, cnt):
+        """
+        Use the objects found to show them in colour
+        :return:
+        """
+        # Go through each rectangle and display the rgb
+        length = len(cnt)
+
+        # Create an array of size the amount of rectangles
+        crop_rgb = []
+        for i in range(0, length):
+            crop_rgb.append(1)
+
+        for x in range(0, length):
+            x, y, w, h = cv2.boundingRect(cnt[x])
+
+            # Try to crop the rgb image for each box
+            try:
+                crop_rgb[x] = self.rgb_img[y:y+h, x:x+w]
+            except:
+                pass
+
+        for x in range(0, length):
+            name = "Cropped " + str(x)
+            cv2.imshow(name, crop_rgb[x])
+        cv2.waitKey(3)
 
 def main():
     objects = Object_Detection()
