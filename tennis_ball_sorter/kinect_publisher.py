@@ -6,8 +6,8 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 import numpy as np
-import moveit_commander
-import moveit_msgs.msg
+#import moveit_commander
+#import moveit_msgs.msg
 import geometry_msgs.msg
 
 
@@ -27,6 +27,7 @@ class ObjectDetection:
         :param data:
         :return:
         """
+
         self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
 
     def callback_depth(self, data):
@@ -49,6 +50,7 @@ class ObjectDetection:
         Function to detect objects from the depth image given
         :return:
         """
+        self.detect_arm()
 
         # Perform thresholding on the image to remove all objects behind a plain
         ret, bin_img = cv2.threshold(depth_array, 0.3, 1, cv2.THRESH_BINARY_INV)
@@ -69,7 +71,7 @@ class ObjectDetection:
             cv2.rectangle(con_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
 
         # Show the colour images of the objects
-        self.show_colour(contours)
+        # self.show_colour(contours)
 
         # Show the Depth image and objects images
         cv2.imshow('Contours', con_img)
@@ -103,8 +105,24 @@ class ObjectDetection:
             cv2.imshow(name, crop_rgb[x])
         cv2.waitKey(3)
 
+    def detect_arm(self):
+        """
+        Function to detect the colour disk on the arm and retun the co-ordinates for calibration
+        :return:
+        """
+        hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2HSV)
 
-class Calibration:
+        lower = np.array([20, 100, 100], dtype=np.uint8)
+        upper = np.array([30, 255, 255], dtype=np.uint8)
+
+        mask = cv2.inRange(hsv, lower, upper)
+        output = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+
+        cv2.imshow("Yellow", output)
+        cv2.waitKey(3)
+
+
+class Robot:
     def __init__(self):
         """
         Class to calibrate the co-ordinate frame of the kinect,
@@ -148,9 +166,6 @@ class Calibration:
         #
         # table.pose.position.x =
 
-        # Move and arm to a location in front of the kinect
-        self.move_arm()
-
     def move_arm(self):
         """
         Move arm to a known position that is visible to the Kinect
@@ -189,9 +204,11 @@ class Calibration:
 
         return pose_target
 
+
 def main():
-    calibrate = Calibration()
-    # objects = ObjectDetection()
+    calibrate = Robot()
+    calibrate.move_arm()
+    objects = ObjectDetection()
 
 if __name__ == '__main__':
     main()
