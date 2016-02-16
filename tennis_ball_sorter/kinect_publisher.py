@@ -3,11 +3,15 @@ import rospy
 import cv2
 import cv
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 import numpy as np
+import moveit_commander
+import moveit_msgs.msg
+import geometry_msgs.msg
 
 
-class Object_Detection:
+class ObjectDetection:
     def __init__(self):
         self.rgb_img = None
         self.bridge = CvBridge()
@@ -99,8 +103,95 @@ class Object_Detection:
             cv2.imshow(name, crop_rgb[x])
         cv2.waitKey(3)
 
+
+class Calibration:
+    def __init__(self):
+        """
+        Class to calibrate the co-ordinate frame of the kinect,
+        with that of Bacxter
+        :return:
+        """
+
+        # Initialise Moveit commander and rospy
+        print "============ Initialising Baxter"
+        moveit_commander.roscpp_initialize(sys.argv)
+        rospy.init_node('calibration_node',
+                        anonymous=True)
+
+        # Initialise objects for movement
+        self.robot = moveit_commander.RobotCommander()
+        self.scene = moveit_commander.PlanningSceneInterface()
+        self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
+        self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
+        self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
+                                                            moveit_msgs.msg.DisplayTrajectory,
+                                                            queue_size=10)
+
+        # Print some information about the state of the robot for debuggin
+        print "============ Reference frame Left: %s" % self.left_arm.get_planning_frame()
+        print "============ Reference frame Rght: %s" % self.right_arm.get_planning_frame()
+
+        print "============ End Effector Left: %s" % self.left_arm.get_end_effector_link()
+        print "============ End Effector Rght: %s" % self.right_arm.get_end_effector_link()
+
+        print "============ Robot GroupsPoses:"
+        print self.left_arm.get_current_pose()
+        print self.right_arm.get_current_pose()
+
+        print "============ Printing robot state"
+        print self.robot.get_current_state()
+        print "============"
+
+        # # Add a table to the environment
+        # table = PoseStamped()
+        # table.header.frame_id = self.robot.get_planning_frame()
+        #
+        # table.pose.position.x =
+
+        # Move and arm to a location in front of the kinect
+        self.move_arm()
+
+    def move_arm(self):
+        """
+        Move arm to a known position that is visible to the Kinect
+        :return:
+        """
+
+        print "============ Generating left_arm plan"
+        pose_target = self.create_pose_target(0.000000,		 # Ww
+                                              0.000000,		 # Wx
+                                              1.000000,		 # Wy
+                                              0.000000,		 # Wz
+                                              0.8, 0.0, 0.0) # X, Y, Z
+        self.left_arm.set_goal_tolerance(0.01)
+        self.left_arm.set_planner_id("RRTConnectkConfigDefault")
+        self.left_arm.set_pose_target(pose_target)
+        left_arm_plan = self.left_arm.plan()
+
+        # Execute the movement
+        print "============ Executing plans"
+        self.left_arm.go()
+
+    def create_pose_target(self, Ww, Wx, Wy, Wz, x, y, z):
+        """
+        Take in an  w, x, y and z values to create a pose target
+        :return: pose_target - a target for a group of joints to move to.
+        """
+
+        pose_target = geometry_msgs.msg.Pose()
+        pose_target.orientation.w = Ww
+        pose_target.orientation.x = Wx
+        pose_target.orientation.y = Wy
+        pose_target.orientation.z = Wz
+        pose_target.position.x = x
+        pose_target.position.y = y
+        pose_target.position.z = z
+
+        return pose_target
+
 def main():
-    objects = Object_Detection()
+    calibrate = Calibration()
+    # objects = ObjectDetection()
 
 if __name__ == '__main__':
     main()
