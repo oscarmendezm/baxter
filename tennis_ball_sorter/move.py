@@ -1,8 +1,4 @@
 __author__ = 'rhys'
-# This script will be working towards the first target use case for the Baxter robot
-
-# The aim is for Baxter to identify individual tennis balls on a table and then
-# to move these into a bin/defined location, also on the table.
 
 # Imports
 import numpy as np
@@ -25,9 +21,6 @@ class Robot:
         Set up all of the subscriptions and objects to control the robot
         :return: 
         """  
-        ################################################################################################################
-        # Setup the Robot for movement
-        ################################################################################################################
         
         # First initialize moveit_commander and rospy.
         print "============ Initialising Baxter"
@@ -74,7 +67,7 @@ class Robot:
         
     def move_to_calibrate(self):
         """
-        Instruct Baxters arms to complete a simple motion task to ensure that initialisation was successful.
+        Instruct baxters arm to move to a set point for calibration
         """
         
         print "============ Generating left_arm plan"
@@ -95,12 +88,13 @@ class Robot:
         self.left_arm.go()
 
       
-class Vision:
+class Calibration:
     def __init__(self):
         """
         Setup subscribers and publishers for vision 
         """
-        
+        self.yellow_img = None
+        self.eroded_yellow_img = None
         self.rgb_img = None
         self.depth_img = None
         self.bridge = CvBridge()
@@ -109,7 +103,7 @@ class Vision:
         self.depth_sub = rospy.Subscriber("camera/depth/image", Image, self.callback_depth)
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
         													moveit_msgs.msg.DisplayTrajectory,
-        													queue_size=10)      
+        													queue_size=5)      
         
     def callback_rgb(self, data):
         """
@@ -125,10 +119,20 @@ class Vision:
         lower = np.array([20, 100, 100], dtype=np.uint8)
         upper = np.array([100, 255, 255], dtype=np.uint8)
         mask = cv2.inRange(hsv, lower, upper)
-        yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
-        cv2.imshow("Yellow", yellow_img)
+        self.yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+        cv2.imshow("Yellow", self.yellow_img)
         cv2.waitKey(5)
-
+        
+        # Erode the image a few times in order to separate close objects
+        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        self.eroded_yellow_img = cv2.erode(self.yellow_img, element, iterations=2)
+        
+        cv2.imshow("Erode", self.eroded_yellow_img)
+        cv2.waitKey(5)    	
+        
+        # Determine the location of the yellow circle in RGB 
+        self.yellow_circle_detection()
+        
     def callback_depth(self, data):
         """
         Function to handle data arriving for depth
@@ -140,20 +144,18 @@ class Vision:
         self.depth_img = np.array(depth, dtype=np.float32)
         cv2.normalize(self.depth_img, self.depth_img, 0, 1, cv2.NORM_MINMAX)
 
-    def object_detection(self):
+    def yellow_circle_detection(self):
         """
         Identify objects on depth
         :return: 
         """
-        # Perform thresholding on the image to remove all objects behind a plain
-        ret, bin_img = cv2.threshold(self.depth_img, 0.3, 1, cv2.THRESH_BINARY_INV)
+        gray_image = cv2.cvtColor(self.eroded_yellow_img, cv2.COLOR_BGR2GRAY)
         
-        # Erode the image a few times in order to separate close objects
-        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-        err_img = cv2.erode(bin_img, element, iterations=20)
+        # Perform thresholding on the image to remove all objects behind a plain
+        ret, bin_img = cv2.threshold(gray_image, 0.3, 1, cv2.THRESH_BINARY_INV)
         
         # Create a new array of type uint8 for the findContours function
-        con_img = np.array(err_img, dtype=np.uint8)
+        con_img = np.array(gray_image, dtype=np.uint8)
         
         # Find the contours of the image and then draw them on
         contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -161,46 +163,11 @@ class Vision:
         
         for x in range(0, len(contours)):
             x, y, w, h = cv2.boundingRect(contours[x])
-            cv2.rectangle(con_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
-        
-        # Show the Depth image and objects images
+            cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
+        cv2.imshow("RC", self.rgb_img)
         cv2.imshow('Contours', con_img)
-        cv2.imshow("Depth", bin_img)
-        cv2.waitKey(3)
-    
-    def show_colour(self, cnt): 
-        """
-        Show the colour image for each bounding box
-        :param cnt: 
-        :return: 
-        """
-        # Go through each rectangle and display the rgb
-        length = len(cnt)
-        
-        # Create an array of size the amount of rectangles
-        crop_rgb = []
-        for i in range(0, length):
-            crop_rgb.append(1)
-        
-        for x in range(0, length):
-            x, y, w, h = cv2.boundingRect(cnt[x])
-        
-            # Try to crop the rgb image for each box
-            try:
-                crop_rgb[x] = self.rgb_img[y:y+h, x:x+w]
-            except:
-                pass
-        
-        for x in range(0, length):
-            name = "Cropped " + str(x)
-            cv2.imshow(name, crop_rgb[x])
-        cv2.waitKey(3)
+        cv2.waitKey(5)
 
-    def detect_arm(self):
-        """
-        Use colour to detect the position of the arm
-        :return: 
-        """
 def create_pose_target(Ww, Wx, Wy, Wz, x, y, z):
     """
     Take in an  w, x, y and z values to create a pose target
@@ -225,10 +192,9 @@ def main():
     rospy.init_node('can_node',anonymous=True)
     robot = Robot()
     robot.move_to_calibrate()
-    vision = Vision()
-    # vision.detect_arm()
+    calibration = Calibration()
     
-    # Keep these updating        
+    # Keep these images updating        
     rospy.spin()  
    
 if __name__ == '__main__':
