@@ -19,16 +19,80 @@ import moveit_msgs.msg
 import geometry_msgs.msg
 
 
-class ObjectDetection:
+class Control:
     def __init__(self):
-    
+        """
+        Set up all of the subscriptions and objects to control the robot
+        :return: 
+        """
+        
+        ################################################################################################################
+        # Declare Variables
+        ################################################################################################################
+        
         self.rgb_img = None
+        self.depth_img = None
         self.bridge = CvBridge()
-        rgb_sub = rospy.Subscriber("camera/rgb/image_color", Image, self.callback_rgb)
-        depth_sub = rospy.Subscriber("camera/depth/image", Image, self.callback_depth)
-
+        
+        ################################################################################################################
+        # Setup Subscribers and Publishers
+        ################################################################################################################
+        
+        self.rgb_sub = rospy.Subscriber("camera/rgb/image_color", Image, self.callback_rgb)
+        self.depth_sub = rospy.Subscriber("camera/depth/image", Image, self.callback_depth)
+        self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
+                                                            moveit_msgs.msg.DisplayTrajectory,
+                                                            queue_size=10)
+        # Keep these updating        
         rospy.spin()
+        
+        ################################################################################################################
+        # Setup the Robot for movement
+        ################################################################################################################
+        
+        # First initialize moveit_commander and rospy.
+        print "============ Initialising Baxter"
+        moveit_commander.roscpp_initialize(sys.argv)
+        rospy.init_node('can_node',
+                        anonymous=True)
 
+        # Instantiate a RobotCommander object. This object is an interface to the robot as a whole.
+        self.robot = moveit_commander.RobotCommander()
+
+        # Instantiate a PlanningSceneInterface object. This object is an interface to the world surrounding the robot.
+        self.scene = moveit_commander.PlanningSceneInterface()
+
+        # Instantiate the MoveGroupCommander objects. These objects are an interface to one group of joints.
+        self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
+        self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
+
+        # Create this DisplayTrajectory publisher which is used below to publish trajectories for RVIZ to visualize.
+        self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
+                                                            moveit_msgs.msg.DisplayTrajectory,
+                                                            queue_size=10)
+                                                            
+        # Getting Basic Information
+        print "============ Reference frame Left: %s" % self.left_arm.get_planning_frame()
+        print "============ Reference frame Rght: %s" % self.right_arm.get_planning_frame()
+        
+        # We can also print the name of the end-effector link for this group
+        print "============ End Effector Left: %s" % self.left_arm.get_end_effector_link()
+        print "============ End Effector Rght: %s" % self.right_arm.get_end_effector_link()
+        
+        # We can get a list of all the groups in the robot
+        print "============ Robot Groups:"
+        print self.robot.get_group_names()
+        
+        # We can get a list of all the groups in the robot
+        print "============ Robot GroupsPoses:"
+        print self.left_arm.get_current_pose()
+        print self.right_arm.get_current_pose()
+
+        # Sometimes for debugging it is useful to print the entire state of the robot
+        print "============ Printing robot state"
+        print self.robot.get_current_state()
+        print "============"                                                   
+                                                            
     def callback_rgb(self, data):
         """
         Function to save image to a variable in the class
@@ -46,22 +110,18 @@ class ObjectDetection:
         :return:
         """
         # Convert the received image to a CV image and normalise it to grayscale
-        depth_image = self.bridge.imgmsg_to_cv2(data, "16UC1")
-        depth_array = np.array(depth_image, dtype=np.float32)
-        cv2.normalize(depth_array, depth_array, 0, 1, cv2.NORM_MINMAX)
+        depth = self.bridge.imgmsg_to_cv2(data, "16UC1")
+        self.depth_img = np.array(depth, dtype=np.float32)
+        cv2.normalize(self.depth_img, self.depth_img, 0, 1, cv2.NORM_MINMAX)
 
-        # Pass the image to to object detection function
-        self.object_detection(depth_array)
-
-    def object_detection(self, depth_array):
+    def object_detection(self):
         """
         Function to detect objects from the depth image given
         :return:
         """
-        self.detect_arm()
-
+        
         # Perform thresholding on the image to remove all objects behind a plain
-        ret, bin_img = cv2.threshold(depth_array, 0.3, 1, cv2.THRESH_BINARY_INV)
+        ret, bin_img = cv2.threshold(self.depth_img, 0.3, 1, cv2.THRESH_BINARY_INV)
 
         # Erode the image a few times in order to separate close objects
         element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
@@ -78,14 +138,11 @@ class ObjectDetection:
             x, y, w, h = cv2.boundingRect(contours[x])
             cv2.rectangle(con_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
 
-        # Show the colour images of the objects
-        # self.show_colour(contours)
-
         # Show the Depth image and objects images
         cv2.imshow('Contours', con_img)
         cv2.imshow("Depth", bin_img)
         cv2.waitKey(3)
-
+    
     def show_colour(self, cnt):
         """
         Use the objects found to show them in colour
@@ -129,70 +186,7 @@ class ObjectDetection:
         cv2.imshow("Yellow", output)
         cv2.waitKey(3)
 
-class Initialise:
-    def __init__(self):
-        """
-        Setup Baxter and the surrounding environment
-        """
-
-        # First initialize moveit_commander and rospy.
-        print "============ Initialising Baxter"
-        moveit_commander.roscpp_initialize(sys.argv)
-        rospy.init_node('can_node',
-                        anonymous=True)
-
-        # Instantiate a RobotCommander object. This object is an interface to the robot as a whole.
-        self.robot = moveit_commander.RobotCommander()
-
-        # Instantiate a PlanningSceneInterface object. This object is an interface to the world surrounding the robot.
-        self.scene = moveit_commander.PlanningSceneInterface()
-
-        # Instantiate the MoveGroupCommander objects. These objects are an interface to one group of joints.
-        self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
-        self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
-
-        # Create this DisplayTrajectory publisher which is used below to publish trajectories for RVIZ to visualize.
-        self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
-                                                            moveit_msgs.msg.DisplayTrajectory,
-                                                            queue_size=10)
-                                                            
-        ## Getting Basic Information
-	  	## ^^^^^^^^^^^^^^^^^^^^^^^^^
-	  	##
-	  	## We can get the name of the reference frame for this robot
-        print "============ Reference frame Left: %s" % self.left_arm.get_planning_frame()
-        print "============ Reference frame Rght: %s" % self.right_arm.get_planning_frame()
-        
-        ## We can also print the name of the end-effector link for this group
-        print "============ End Effector Left: %s" % self.left_arm.get_end_effector_link()
-        print "============ End Effector Rght: %s" % self.right_arm.get_end_effector_link()
-        
-        ## We can get a list of all the groups in the robot
-        print "============ Robot Groups:"
-        print self.robot.get_group_names()
-        
-        ## We can get a list of all the groups in the robot
-        print "============ Robot GroupsPoses:"
-        print self.left_arm.get_current_pose()
-        print self.right_arm.get_current_pose()
-
-        ## Sometimes for debugging it is useful to print the entire state of the
-        ## robot.
-        print "============ Printing robot state"
-        print self.robot.get_current_state()
-        print "============"                                                   
-                                                            
-        # Wait for RVIZ to initialize. This sleep is ONLY to allow Rviz to come up.
-        #print "============ Waiting for RVIZ..."
-        #rospy.sleep(10)
-        
-        # Add a table to the environment
-        # table = PoseStamped()
-        # table.header.frame_id = self.robot.get_planning_frame()
-        
-        # table.pose.position.x = 
-
-    def test_movement(self):
+    def move_to_calibrate(self):
         """
         Instruct Baxters arms to complete a simple motion task to ensure that initialisation was successful.
         """
@@ -211,8 +205,8 @@ class Initialise:
         # Execute the movement
         print "============ Executing plans"
         self.left_arm.go()
-
-
+    
+    
 def create_pose_target(Ww, Wx, Wy, Wz, x, y, z):
     """
     Take in an  w, x, y and z values to create a pose target
@@ -232,12 +226,10 @@ def create_pose_target(Ww, Wx, Wy, Wz, x, y, z):
 
 
 def main():
-
-    # Run the Initialise class to setup Baxter and the environment
-    baxter = Initialise()
-    baxter.test_movement()
-    objects = ObjectDetection()
-
+    
+    # Create the class that will control the script
+    con = Control()
+    con.move_to_calibrate()
    
 if __name__ == '__main__':
     main()
