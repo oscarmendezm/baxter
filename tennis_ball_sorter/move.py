@@ -1,240 +1,243 @@
-#!/usr/bin/env python
+__author__ = 'rhys'
+# This script will be working towards the first target use case for the Baxter robot
 
-# Software License Agreement (BSD License)
-#
-# Copyright (c) 2013, SRI International
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#
-#  * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#  * Redistributions in binary form must reproduce the above
-#    copyright notice, this list of conditions and the following
-#    disclaimer in the documentation and/or other materials provided
-#    with the distribution.
-#  * Neither the name of SRI International nor the names of its
-#    contributors may be used to endorse or promote products derived
-#    from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-# COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-# ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
-#
-# Author: Acorn Pooley
+# The aim is for Baxter to identify individual tennis balls on a table and then
+# to move these into a bin/defined location, also on the table.
 
-## BEGIN_SUB_TUTORIAL imports
-##
-## To use the python interface to move_group, import the moveit_commander
-## module.  We also import rospy and some messages that we will use.
+# Imports
+import numpy as np
+import cv
+import cv2
+from cv_bridge import CvBridge, CvBridgeError
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
 import sys
 import copy
 import rospy
 import moveit_commander
 import moveit_msgs.msg
 import geometry_msgs.msg
-## END_SUB_TUTORIAL
-
-from std_msgs.msg import String
-
-def move_group_python_interface_tutorial():
-  ## BEGIN_TUTORIAL
-  ##
-  ## Setup
-  ## ^^^^^
-  ## CALL_SUB_TUTORIAL imports
-  ##
-  ## First initialize moveit_commander and rospy.
-  print "============ Starting tutorial setup"
-  moveit_commander.roscpp_initialize(sys.argv)
-  rospy.init_node('move_group_python_interface_tutorial',
-                  anonymous=True)
-
-  ## Instantiate a RobotCommander object.  This object is an interface to
-  ## the robot as a whole.
-  robot = moveit_commander.RobotCommander()
-
-  ## Instantiate a PlanningSceneInterface object.  This object is an interface
-  ## to the world surrounding the robot.
-  scene = moveit_commander.PlanningSceneInterface()
-
-  ## Instantiate a MoveGroupCommander object.  This object is an interface
-  ## to one group of joints.  In this case the group is the joints in the left
-  ## arm.  This interface can be used to plan and execute motions on the left
-  ## arm.
-  group = moveit_commander.MoveGroupCommander("left_arm")
 
 
-  ## We create this DisplayTrajectory publisher which is used below to publish
-  ## trajectories for RVIZ to visualize.
-  display_trajectory_publisher = rospy.Publisher(
-                                      '/move_group/display_planned_path',
-                                      moveit_msgs.msg.DisplayTrajectory)
+class ObjectDetection:
+    def __init__(self):
+    
+        self.rgb_img = None
+        self.bridge = CvBridge()
+        rgb_sub = rospy.Subscriber("camera/rgb/image_color", Image, self.callback_rgb)
+        depth_sub = rospy.Subscriber("camera/depth/image", Image, self.callback_depth)
 
-  ## Wait for RVIZ to initialize. This sleep is ONLY to allow Rviz to come up.
-  print "============ Waiting for RVIZ..."
-  rospy.sleep(10)
-  print "============ Starting tutorial "
+        rospy.spin()
 
-  ## Getting Basic Information
-  ## ^^^^^^^^^^^^^^^^^^^^^^^^^
-  ##
-  ## We can get the name of the reference frame for this robot
-  print "============ Reference frame: %s" % group.get_planning_frame()
+    def callback_rgb(self, data):
+        """
+        Function to save image to a variable in the class
+        :param data:
+        :return:
+        """
 
-  ## We can also print the name of the end-effector link for this group
-  print "============ Reference frame: %s" % group.get_end_effector_link()
+        self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
 
-  ## We can get a list of all the groups in the robot
-  print "============ Robot Groups:"
-  print robot.get_group_names()
+    def callback_depth(self, data):
+        """
+        Use the data received from the topic.
+        Convert to CV image and then perform thresholding to identify objects
+        :param data:
+        :return:
+        """
+        # Convert the received image to a CV image and normalise it to grayscale
+        depth_image = self.bridge.imgmsg_to_cv2(data, "16UC1")
+        depth_array = np.array(depth_image, dtype=np.float32)
+        cv2.normalize(depth_array, depth_array, 0, 1, cv2.NORM_MINMAX)
 
-  ## Sometimes for debugging it is useful to print the entire state of the
-  ## robot.
-  print "============ Printing robot state"
-  print robot.get_current_state()
-  print "============"
+        # Pass the image to to object detection function
+        self.object_detection(depth_array)
+
+    def object_detection(self, depth_array):
+        """
+        Function to detect objects from the depth image given
+        :return:
+        """
+        self.detect_arm()
+
+        # Perform thresholding on the image to remove all objects behind a plain
+        ret, bin_img = cv2.threshold(depth_array, 0.3, 1, cv2.THRESH_BINARY_INV)
+
+        # Erode the image a few times in order to separate close objects
+        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        err_img = cv2.erode(bin_img, element, iterations=20)
+
+        # Create a new array of type uint8 for the findContours function
+        con_img = np.array(err_img, dtype=np.uint8)
+
+        # Find the contours of the image and then draw them on
+        contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(con_img, contours, -1, (128, 255, 0), 3)
+
+        for x in range(0, len(contours)):
+            x, y, w, h = cv2.boundingRect(contours[x])
+            cv2.rectangle(con_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
+
+        # Show the colour images of the objects
+        # self.show_colour(contours)
+
+        # Show the Depth image and objects images
+        cv2.imshow('Contours', con_img)
+        cv2.imshow("Depth", bin_img)
+        cv2.waitKey(3)
+
+    def show_colour(self, cnt):
+        """
+        Use the objects found to show them in colour
+        :return:
+        """
+        # Go through each rectangle and display the rgb
+        length = len(cnt)
+
+        # Create an array of size the amount of rectangles
+        crop_rgb = []
+        for i in range(0, length):
+            crop_rgb.append(1)
+
+        for x in range(0, length):
+            x, y, w, h = cv2.boundingRect(cnt[x])
+
+            # Try to crop the rgb image for each box
+            try:
+                crop_rgb[x] = self.rgb_img[y:y+h, x:x+w]
+            except:
+                pass
+
+        for x in range(0, length):
+            name = "Cropped " + str(x)
+            cv2.imshow(name, crop_rgb[x])
+        cv2.waitKey(3)
+
+    def detect_arm(self):
+        """
+        Function to detect the colour disk on the arm and retun the co-ordinates for calibration
+        :return:
+        """
+        hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2HSV)
+
+        lower = np.array([20, 100, 100], dtype=np.uint8)
+        upper = np.array([30, 255, 255], dtype=np.uint8)
+
+        mask = cv2.inRange(hsv, lower, upper)
+        output = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+
+        cv2.imshow("Yellow", output)
+        cv2.waitKey(3)
+
+class Initialise:
+    def __init__(self):
+        """
+        Setup Baxter and the surrounding environment
+        """
+
+        # First initialize moveit_commander and rospy.
+        print "============ Initialising Baxter"
+        moveit_commander.roscpp_initialize(sys.argv)
+        rospy.init_node('can_node',
+                        anonymous=True)
+
+        # Instantiate a RobotCommander object. This object is an interface to the robot as a whole.
+        self.robot = moveit_commander.RobotCommander()
+
+        # Instantiate a PlanningSceneInterface object. This object is an interface to the world surrounding the robot.
+        self.scene = moveit_commander.PlanningSceneInterface()
+
+        # Instantiate the MoveGroupCommander objects. These objects are an interface to one group of joints.
+        self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
+        self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
+
+        # Create this DisplayTrajectory publisher which is used below to publish trajectories for RVIZ to visualize.
+        self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
+                                                            moveit_msgs.msg.DisplayTrajectory,
+                                                            queue_size=10)
+                                                            
+        ## Getting Basic Information
+	  	## ^^^^^^^^^^^^^^^^^^^^^^^^^
+	  	##
+	  	## We can get the name of the reference frame for this robot
+        print "============ Reference frame Left: %s" % self.left_arm.get_planning_frame()
+        print "============ Reference frame Rght: %s" % self.right_arm.get_planning_frame()
+        
+        ## We can also print the name of the end-effector link for this group
+        print "============ End Effector Left: %s" % self.left_arm.get_end_effector_link()
+        print "============ End Effector Rght: %s" % self.right_arm.get_end_effector_link()
+        
+        ## We can get a list of all the groups in the robot
+        print "============ Robot Groups:"
+        print self.robot.get_group_names()
+        
+        ## We can get a list of all the groups in the robot
+        print "============ Robot GroupsPoses:"
+        print self.left_arm.get_current_pose()
+        print self.right_arm.get_current_pose()
+
+        ## Sometimes for debugging it is useful to print the entire state of the
+        ## robot.
+        print "============ Printing robot state"
+        print self.robot.get_current_state()
+        print "============"                                                   
+                                                            
+        # Wait for RVIZ to initialize. This sleep is ONLY to allow Rviz to come up.
+        #print "============ Waiting for RVIZ..."
+        #rospy.sleep(10)
+        
+        # Add a table to the environment
+        # table = PoseStamped()
+        # table.header.frame_id = self.robot.get_planning_frame()
+        
+        # table.pose.position.x = 
+
+    def test_movement(self):
+        """
+        Instruct Baxters arms to complete a simple motion task to ensure that initialisation was successful.
+        """
+
+        print "============ Generating left_arm plan"
+        pose_target = create_pose_target(0.000000,		# Ww
+        								 0.000000,		# Wx
+        								 1.000000,		# Wy	
+        								 0.000000,		# Wz
+        								 0.8, 0.0, 0.0)	# X, Y, Z
+        self.left_arm.set_goal_tolerance(0.01);
+        self.left_arm.set_planner_id("RRTConnectkConfigDefault");
+        self.left_arm.set_pose_target(pose_target)
+        left_arm_plan = self.left_arm.plan()
+
+        # Execute the movement
+        print "============ Executing plans"
+        self.left_arm.go()
 
 
-  ## Planning to a Pose goal
-  ## ^^^^^^^^^^^^^^^^^^^^^^^
-  ## We can plan a motion for this group to a desired pose for the 
-  ## end-effector
-  print "============ Generating plan 1"
-  pose_target = geometry_msgs.msg.Pose()
-  pose_target.orientation.w = 1.0
-  pose_target.position.x = 0.7
-  pose_target.position.y = -0.05
-  pose_target.position.z = 1.1
-  group.set_pose_target(pose_target)
+def create_pose_target(Ww, Wx, Wy, Wz, x, y, z):
+    """
+    Take in an  w, x, y and z values to create a pose target
+    :return: pose_target - a target for a group of joints to move to.
+    """
 
-  ## Now, we call the planner to compute the plan
-  ## and visualize it if successful
-  ## Note that we are just planning, not asking move_group 
-  ## to actually move the robot
-  plan1 = group.plan()
+    pose_target = geometry_msgs.msg.Pose()
+    pose_target.orientation.w = Ww
+    pose_target.orientation.x = Wx
+    pose_target.orientation.y = Wy
+    pose_target.orientation.z = Wz
+    pose_target.position.x = x
+    pose_target.position.y = y
+    pose_target.position.z = z
 
-  print "============ Waiting while RVIZ displays plan1..."
-  rospy.sleep(5)
-
- 
-  ## You can ask RVIZ to visualize a plan (aka trajectory) for you.  But the
-  ## group.plan() method does this automatically so this is not that useful
-  ## here (it just displays the same trajectory again).
-  print "============ Visualizing plan1"
-  display_trajectory = moveit_msgs.msg.DisplayTrajectory()
-
-  display_trajectory.trajectory_start = robot.get_current_state()
-  display_trajectory.trajectory.append(plan1)
-  display_trajectory_publisher.publish(display_trajectory);
-
-  print "============ Waiting while plan1 is visualized (again)..."
-  rospy.sleep(5)
+    return pose_target
 
 
-  ## Moving to a pose goal
-  ## ^^^^^^^^^^^^^^^^^^^^^
-  ##
-  ## Moving to a pose goal is similar to the step above
-  ## except we now use the go() function. Note that
-  ## the pose goal we had set earlier is still active 
-  ## and so the robot will try to move to that goal. We will
-  ## not use that function in this tutorial since it is 
-  ## a blocking function and requires a controller to be active
-  ## and report success on execution of a trajectory.
+def main():
 
-  # Uncomment below line when working with a real robot
-  group.go(wait=True)
+    # Run the Initialise class to setup Baxter and the environment
+    baxter = Initialise()
+    baxter.test_movement()
+    objects = ObjectDetection()
 
-  ## Planning to a joint-space goal 
-  ## ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  ##
-  ## Let's set a joint space goal and move towards it. 
-  ## First, we will clear the pose target we had just set.
-
-  group.clear_pose_targets()
-
-  ## Then, we will get the current set of joint values for the group
-  group_variable_values = group.get_current_joint_values()
-  print "============ Joint values: ", group_variable_values
-
-  ## Now, let's modify one of the joints, plan to the new joint
-  ## space goal and visualize the plan
-  group_variable_values[0] = 1.0
-  group.set_joint_value_target(group_variable_values)
-
-  plan2 = group.plan()
-
-  print "============ Waiting while RVIZ displays plan2..."
-  rospy.sleep(5)
-
-
-  ## Cartesian Paths
-  ## ^^^^^^^^^^^^^^^
-  ## You can plan a cartesian path directly by specifying a list of waypoints 
-  ## for the end-effector to go through.
-  waypoints = []
-
-  # start with the current pose
-  waypoints.append(group.get_current_pose().pose)
-
-  # first orient gripper and move forward (+x)
-  wpose = geometry_msgs.msg.Pose()
-  wpose.orientation.w = 1.0
-  wpose.position.x = waypoints[0].position.x + 0.1
-  wpose.position.y = waypoints[0].position.y
-  wpose.position.z = waypoints[0].position.z
-  waypoints.append(copy.deepcopy(wpose))
-
-  # second move down
-  wpose.position.z -= 0.10
-  waypoints.append(copy.deepcopy(wpose))
-
-  # third move to the side
-  wpose.position.y += 0.05
-  waypoints.append(copy.deepcopy(wpose))
-
-  ## We want the cartesian path to be interpolated at a resolution of 1 cm
-  ## which is why we will specify 0.01 as the eef_step in cartesian
-  ## translation.  We will specify the jump threshold as 0.0, effectively
-  ## disabling it.
-  (plan3, fraction) = group.compute_cartesian_path(
-                               waypoints,   # waypoints to follow
-                               0.01,        # eef_step
-                               0.0)         # jump_threshold
-                               
-  print "============ Waiting while RVIZ displays plan3..."
-  rospy.sleep(5)
-
- 
-  ## Adding/Removing Objects and Attaching/Detaching Objects
-  ## ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  ## First, we will define the collision object message
-  collision_object = moveit_msgs.msg.CollisionObject()
-
-
-
-  ## When finished shut down moveit_commander.
-  moveit_commander.roscpp_shutdown()
-
-  ## END_TUTORIAL
-
-  print "============ STOPPING"
-
-
-if __name__=='__main__':
-  try:
-    move_group_python_interface_tutorial()
-  except rospy.ROSInterruptException:
-    pass
+   
+if __name__ == '__main__':
+    main()
