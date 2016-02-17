@@ -65,7 +65,7 @@ class Robot:
         # We can get a list of all the groups in the robot
         print "============ Robot GroupsPoses:"
         print self.left_arm.get_current_pose()
-        print self.right_arm.get_current_pose()
+        #print self.right_arm.get_current_pose()
 
         # Sometimes for debugging it is useful to print the entire state of the robot
         print "============ Printing robot state"
@@ -78,11 +78,13 @@ class Robot:
         """
         
         print "============ Generating left_arm plan"
-        pose_target = create_pose_target(0.000000,		# Ww
-                                         0.000000,		# Wx
-                                         1.000000,		# Wy	
-                                         0.000000,		# Wz
-                                         0.8, 0.0, 0.0)	# X, Y, Z
+        pose_target = create_pose_target(0.251457698541,		# Ww
+                                         0.132660864689,		# Wx
+                                         -0.937502362532,		# Wy	
+                                         0.200647554364,		# Wz
+                                         0.453869796845, 		# X
+                                         -0.0301870563505, 		# Y
+                                         0.150496092849)		# Z
         self.left_arm.set_goal_tolerance(0.01);
         self.left_arm.set_planner_id("RRTConnectkConfigDefault");
         self.left_arm.set_pose_target(pose_target)
@@ -106,18 +108,26 @@ class Vision:
         self.rgb_sub = rospy.Subscriber("camera/rgb/image_color", Image, self.callback_rgb)
         self.depth_sub = rospy.Subscriber("camera/depth/image", Image, self.callback_depth)
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
-                                                            moveit_msgs.msg.DisplayTrajectory,
-                                                            queue_size=10)                                             
-                                                                                                            
+        													moveit_msgs.msg.DisplayTrajectory,
+        													queue_size=10)      
+        
     def callback_rgb(self, data):
         """
         Function to handle data arriving for RGB
         :param data: 
         :return: 
         """
+        # Convert to usable format
         self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
-        cv2.imshow("RGB", self.rgb_img)
-        cv2.waitKey(3)
+        
+        # View only Yellow to find point on gripper
+        hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
+        lower = np.array([20, 100, 100], dtype=np.uint8)
+        upper = np.array([100, 255, 255], dtype=np.uint8)
+        mask = cv2.inRange(hsv, lower, upper)
+        yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+        cv2.imshow("Yellow", yellow_img)
+        cv2.waitKey(5)
 
     def callback_depth(self, data):
         """
@@ -129,9 +139,6 @@ class Vision:
         depth = self.bridge.imgmsg_to_cv2(data, "16UC1")
         self.depth_img = np.array(depth, dtype=np.float32)
         cv2.normalize(self.depth_img, self.depth_img, 0, 1, cv2.NORM_MINMAX)
-        
-        cv2.imshow("Depth", self.depth_img)
-        cv2.waitKey(3)
 
     def object_detection(self):
         """
@@ -194,18 +201,6 @@ class Vision:
         Use colour to detect the position of the arm
         :return: 
         """
-        hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2HSV)
-        
-        lower = np.array([20, 100, 100], dtype=np.uint8)
-        upper = np.array([30, 255, 255], dtype=np.uint8)
-        
-        mask = cv2.inRange(hsv, lower, upper)
-        output = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
-        
-        cv2.imshow("Yellow", output)
-        cv2.waitKey(3)
-        
-    
 def create_pose_target(Ww, Wx, Wy, Wz, x, y, z):
     """
     Take in an  w, x, y and z values to create a pose target
@@ -229,8 +224,9 @@ def main():
     # Initialise node
     rospy.init_node('can_node',anonymous=True)
     robot = Robot()
-    Robot.move_to_calibrate()
+    robot.move_to_calibrate()
     vision = Vision()
+    # vision.detect_arm()
     
     # Keep these updating        
     rospy.spin()  
