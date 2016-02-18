@@ -120,15 +120,10 @@ class Calibration:
         upper = np.array([100, 255, 255], dtype=np.uint8)
         mask = cv2.inRange(hsv, lower, upper)
         self.yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
-        cv2.imshow("Yellow", self.yellow_img)
-        cv2.waitKey(5)
         
         # Erode the image a few times in order to separate close objects
         element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-        self.eroded_yellow_img = cv2.erode(self.yellow_img, element, iterations=2)
-        
-        cv2.imshow("Erode", self.eroded_yellow_img)
-        cv2.waitKey(5)    	
+        self.eroded_yellow_img = cv2.erode(self.yellow_img, element, iterations=2)  	
         
         # Determine the location of the yellow circle in RGB 
         self.yellow_circle_detection()
@@ -161,13 +156,27 @@ class Calibration:
         contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(con_img, contours, -1, (128, 255, 0), 3)
         
-        for x in range(0, len(contours)):
-            x, y, w, h = cv2.boundingRect(contours[x])
-            cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
-        cv2.imshow("RC", self.rgb_img)
-        cv2.imshow('Contours', con_img)
-        cv2.waitKey(5)
-
+        try:
+		    # Find the largest rectangle and discard the others
+		    for i in range(0, len(contours)):
+		    	x, y, w, h = cv2.boundingRect(contours[i])
+		    	area = w * h
+		    	if i is 0:
+		    		current_max = area
+		    		max_x = i
+		    	else:
+		    		if area > current_max:
+		    			current_max = area
+		    			max_x = i
+		    			
+		    # Display the largest box
+		    x, y, w, h = cv2.boundingRect(contours[max_x])
+		    cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
+		    cv2.imshow("Calibration", self.rgb_img)
+		    cv2.waitKey(5)
+        except:
+			print "No Circle found"
+			
 def create_pose_target(Ww, Wx, Wy, Wz, x, y, z):
     """
     Take in an  w, x, y and z values to create a pose target
