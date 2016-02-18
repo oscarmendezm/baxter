@@ -28,56 +28,45 @@ class Robot:
         rospy.init_node('can_node',
                         anonymous=True)
 
-        # Instantiate a RobotCommander object. This object is an interface to the robot as a whole.
         self.robot = moveit_commander.RobotCommander()
-
-        # Instantiate a PlanningSceneInterface object. This object is an interface to the world surrounding the robot.
         self.scene = moveit_commander.PlanningSceneInterface()
-
-        # Instantiate the MoveGroupCommander objects. These objects are an interface to one group of joints.
         self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
         self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
 
-        # Create this DisplayTrajectory publisher which is used below to publish trajectories for RVIZ to visualize.
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
                                                             moveit_msgs.msg.DisplayTrajectory,
                                                             queue_size=10)
-                                                            
-        # Getting Basic Information
-        print "============ Reference frame Left: %s" % self.left_arm.get_planning_frame()
-        print "============ Reference frame Rght: %s" % self.right_arm.get_planning_frame()
-        
-        # We can also print the name of the end-effector link for this group
-        print "============ End Effector Left: %s" % self.left_arm.get_end_effector_link()
-        print "============ End Effector Rght: %s" % self.right_arm.get_end_effector_link()
-        
-        # We can get a list of all the groups in the robot
-        print "============ Robot Groups:"
-        print self.robot.get_group_names()
         
         # We can get a list of all the groups in the robot
         print "============ Robot GroupsPoses:"
         print self.left_arm.get_current_pose()
         #print self.right_arm.get_current_pose()
-
-        # Sometimes for debugging it is useful to print the entire state of the robot
-        print "============ Printing robot state"
-        print self.robot.get_current_state()
-        print "============"    
         
-    def move_to_calibrate(self):
+    def move_to_calibrate(self, test):
         """
         Instruct baxters arm to move to a set point for calibration
         """
         
-        print "============ Generating left_arm plan"
-        pose_target = create_pose_target(0.251457698541,		# Ww
-                                         0.132660864689,		# Wx
-                                         -0.937502362532,		# Wy	
-                                         0.200647554364,		# Wz
-                                         0.453869796845, 		# X
-                                         -0.0301870563505, 		# Y
-                                         0.150496092849)		# Z
+        if test is 1:
+            print "============ Generating left_arm plan"
+            pose_target = create_pose_target(0.251457698541,		# Ww
+                                             0.132660864689,		# Wx
+                                             -0.937502362532,		# Wy	
+                                             0.200647554364,		# Wz
+                                             0.453869796845, 		# X
+                                             -0.0301870563505, 		# Y
+                                             0.150496092849)		# Z
+
+            
+        else:
+            pose_target = create_pose_target(0.251457698541,		# Ww
+                                             0.132660864689,		# Wx
+                                             -0.937502362532,		# Wy	
+                                             0.200647554364,		# Wz
+                                             0.553869796845, 		# X
+                                             -0.1301870563505, 		# Y
+                                             0.250496092849)		# Z
+                                             
         self.left_arm.set_goal_tolerance(0.01);
         self.left_arm.set_planner_id("RRTConnectkConfigDefault");
         self.left_arm.set_pose_target(pose_target)
@@ -97,6 +86,9 @@ class Calibration:
         self.eroded_yellow_img = None
         self.rgb_img = None
         self.depth_img = None
+        self.contour = None
+        self.center_x = 0
+        self.center_y = 0
         self.bridge = CvBridge()
         
         self.rgb_sub = rospy.Subscriber("camera/rgb/image_color", Image, self.callback_rgb)
@@ -139,6 +131,19 @@ class Calibration:
         self.depth_img = np.array(depth, dtype=np.float32)
         cv2.normalize(self.depth_img, self.depth_img, 0, 1, cv2.NORM_MINMAX)
 
+        # Add a bit to the x value to account for the off center camera
+        self.center_x += 80
+        
+        # Print the center of the circle on the depth image
+        cv2.rectangle(self.depth_img, (self.center_x, self.center_y), ((self.center_x+1), (self.center_y+1)), (255, 0, 127), thickness=5, lineType=8, shift=0)
+        cv2.imshow("Depth", self.depth_img)
+        cv2.waitKey(5)
+        
+        # Determine the depth of this point
+        print self.depth_img[self.center_x][self.center_y]
+        print self.center_x + 80
+        print self.center_y
+
     def yellow_circle_detection(self):
         """
         Identify objects on depth
@@ -171,11 +176,18 @@ class Calibration:
 		    			
 		    # Display the largest box
 		    x, y, w, h = cv2.boundingRect(contours[max_x])
+		    self.contour = contours[max_x]
 		    cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
-		    cv2.imshow("Calibration", self.rgb_img)
-		    cv2.waitKey(5)
         except:
-			print "No Circle found"
+            print "No Circle found"
+
+        # Find the Centre of the largest box
+        self.center_x = int(x + (0.5 * w))
+        self.center_y = int(y + (0.5 * h))
+ 
+        cv2.imshow("Calibration", self.rgb_img)
+        cv2.waitKey(5)
+
 			
 def create_pose_target(Ww, Wx, Wy, Wz, x, y, z):
     """
@@ -200,7 +212,7 @@ def main():
     # Initialise node
     rospy.init_node('can_node',anonymous=True)
     robot = Robot()
-    robot.move_to_calibrate()
+    robot.move_to_calibrate(2)
     calibration = Calibration()
     
     # Keep these images updating        
