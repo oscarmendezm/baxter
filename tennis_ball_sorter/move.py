@@ -50,6 +50,7 @@ class Control:
         # We can get a list of all the groups in the robot
         print "============ Robot GroupsPoses:"
         print self.right_arm.get_current_pose()
+        print self.left_arm.get_current_pose()
 
         # Setup the subscribers and publishers
         self.rgb_sub = rospy.Subscriber("camera/rgb/image_rect_color", Image, self.callback_rgb)
@@ -85,14 +86,18 @@ class Control:
         Function to complete the calibration between the Kinect and Baxter coordinate frames
         :return:
         """
-        kinect_points = np.float32([None] * 3)
-        baxter_points = np.float32([None] * 3)
+        kinect_points = np.float32([[None] * 3] * 3)
+        baxter_points = np.float32([[None] * 3] * 3)
         
         points_detected = False
+        
+        # Move the left arm out of the way for calibration
+        self.move_to_remove()
 
         # Loop through 3 points in order to use Affine transformation
         for point in range(0, 3):
-            baxter_points[point] = self.move_to_calibrate(point)
+            bx, by, bz = self.move_to_calibrate(point)
+            baxter_points[point] = [bx, by, bz]
             
             # Add small sleep time so the Kinect images can update
             time.sleep(2)
@@ -101,14 +106,38 @@ class Control:
                     points_detected = self.detect_calibration_marker()
                     if points_detected:
                     	kinect_points[point] = [float(self.marker_center_x),
-                    								float(self.marker_center_y),
-                    								float(self.marker_depth)]
+                    						    float(self.marker_center_y),
+                    							float(self.marker_depth)]
                         print "Kinect: " + str(kinect_points[point])
                         print "Baxter: " + str(baxter_points[point])
             points_detected = False
            
-        affine = cv2.estimateAffine3D(kinect_points, baxter_points)
-        print affine
+        retval, affine, inliers = cv2.estimateAffine3D(kinect_points, baxter_points)
+        print str(retval) + '\n'
+        print str(affine) + '\n'
+        print str(inliers) + '\n'
+        
+    def move_to_remove(self):
+        """
+        Move Baxters Left arm out of the way of the Kinect for calibration
+        """
+        x = -0.0427936490711
+    	y = 0.626374995844
+    	z = 0.264948886765
+    	pose_target = self.create_pose_target(0.174085627239,		# Ww
+                                              0.316004690891,		# Wx
+                                              -0.826880690999,		# Wy
+                                              0.431397209745,		# Wz
+                                              x, 		            # X
+                                              y, 					# Y
+                                              z)					# Z
+                                              
+        self.left_arm.set_goal_tolerance(0.01);
+        self.left_arm.set_planner_id("RRTConnectkConfigDefault");
+        self.left_arm.set_pose_target(pose_target)
+        left_arm_plan = self.left_arm.plan()
+        self.left_arm.go()
+        
 
     def move_to_calibrate(self, p):
         """
@@ -155,13 +184,14 @@ class Control:
                                                   y, 					# Y
                                                   z)					# Z
 
-        self.right_arm.set_goal_tolerance(0.01);
-        self.right_arm.set_planner_id("RRTConnectkConfigDefault");
+        self.right_arm.set_goal_tolerance(0.01)
+        self.right_arm.set_planning_time(10)
+        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
         self.right_arm.set_pose_target(pose_target)
         right_arm_plan = self.right_arm.plan()
         self.right_arm.go()
         
-        return [float(x), float(y), float(z)]
+        return x, y, z
 
     def detect_calibration_marker(self):
         """
@@ -211,6 +241,7 @@ class Control:
             cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
         except:
             print "No Circle found"
+            return False
 
         # Find the Centre of the largest box
         self.marker_center_x = int(x + (0.5 * w))
