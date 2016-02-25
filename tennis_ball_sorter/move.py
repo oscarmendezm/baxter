@@ -112,10 +112,24 @@ class Control:
                         print "Baxter: " + str(baxter_points[point])
             points_detected = False
            
-        retval, affine, inliers = cv2.estimateAffine3D(kinect_points, baxter_points)
+        retval, affine, inliers = cv2.estimateAffine3D(kinect_points, baxter_points, confidence=0.99)
         print str(retval) + '\n'
         print str(affine) + '\n'
         print str(inliers) + '\n'
+        
+        print "Test: \n"
+        print "Kinect Points Before: "
+        print kinect_points[0]
+        #out = cv2.transform(kinect_points[0], kinect_points[0], affine)
+        out = affine.dot(kinect_points)
+        print "\nKinect points after:"
+        print kinect_points[0]
+        print "\nBaxter points at 0:"
+        print baxter_points[0]
+        
+        print "\nAffine transformed points:"
+        print out
+       
         
     def move_to_remove(self):
         """
@@ -185,7 +199,7 @@ class Control:
                                                   z)					# Z
 
         self.right_arm.set_goal_tolerance(0.01)
-        self.right_arm.set_planning_time(10)
+        self.right_arm.set_planning_time(100)
         self.right_arm.set_planner_id("RRTConnectkConfigDefault")
         self.right_arm.set_pose_target(pose_target)
         right_arm_plan = self.right_arm.plan()
