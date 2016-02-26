@@ -7,6 +7,7 @@ import cv2
 from cv_bridge import CvBridge, CvBridgeError
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
+from baxter_interface import Navigator
 import sys
 import copy
 import rospy
@@ -42,6 +43,7 @@ class Control:
         self.scene = moveit_commander.PlanningSceneInterface()
         self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
         self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
+        self.right_arm_navigator = Navigator('right')
 
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
                                                             moveit_msgs.msg.DisplayTrajectory,
@@ -58,6 +60,7 @@ class Control:
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
                                                            moveit_msgs.msg.DisplayTrajectory,
                                                            queue_size=5)
+        self.screen_pub = rospy.Publisher('robot/xdisplay', Image, latch=True, queue_size=10)
 
     def callback_rgb(self, data):
         """
@@ -86,31 +89,44 @@ class Control:
         Function to complete the calibration between the Kinect and Baxter coordinate frames
         :return:
         """
-        kinect_points = np.float32([[None] * 3] * 3)
-        baxter_points = np.float32([[None] * 3] * 3)
+        kinect_points = []
+        baxter_points = []
         
         points_detected = False
         
+        point = 0
+        
         # Move the left arm out of the way for calibration
         self.move_to_remove()
+        
+        # Wait until arm button is pressed to use frame
+        while self.right_arm_navigator.button1 is False:
+			if self.right_arm_navigator.button0:
+			    # Show the Kinect feed on Baxters screen
+			    msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
+			    self.screen_pub.publish(msg)
 
-        # Loop through 3 points in order to use Affine transformation
-        for point in range(0, 3):
-            bx, by, bz = self.move_to_calibrate(point)
-            baxter_points[point] = [bx, by, bz]
-            
-            # Add small sleep time so the Kinect images can update
-            time.sleep(2)
-            while not points_detected:
-            	if (self.rgb_img is not None) and (self.depth_img is not None):
-                    points_detected = self.detect_calibration_marker()
-                    if points_detected:
-                    	kinect_points[point] = [float(self.marker_center_x),
-                    						    float(self.marker_center_y),
-                    							float(self.marker_depth)]
-                        print "Kinect: " + str(kinect_points[point])
-                        print "Baxter: " + str(baxter_points[point])
-            points_detected = False
+			    while not points_detected:
+		        	x, y, z = self.return_current_pose("right")
+		        	baxter_points.append([x, y, z])
+		    		if (self.rgb_img is not None) and (self.depth_img is not None):
+		    		    points_detected = self.detect_calibration_marker()
+		    		    if points_detected:
+		    		        kinect_points.append([float(self.marker_center_x),
+		                						  float(self.marker_center_y),
+		                						  float(self.marker_depth)])
+		                    print "Kinect: " + str(kinect_points[point])
+		                    print "Baxter: " + str(baxter_points[point])
+		                    point += 1
+		                    time.sleep(2)
+		        points_detected = False
+        print "\n\nBaxter Points:"
+        print "\n" + str(baxter_points)
+        print "\n\nKinect Points:"
+        print "\n" + str(kinect_points)
+        
+        kinect_points = np.asarray(kinect_points)
+        baxter_points = np.asarray(baxter_points)
            
         retval, affine, inliers = cv2.estimateAffine3D(kinect_points, baxter_points, confidence=0.99)
         print str(retval) + '\n'
@@ -120,15 +136,16 @@ class Control:
         print "Test: \n"
         print "Kinect Points Before: "
         print kinect_points[0]
-        #out = cv2.transform(kinect_points[0], kinect_points[0], affine)
-        out = affine.dot(kinect_points)
+        outA = cv2.transform(kinect_points[0], kinect_points[0], affine)
+        outD = kinect_points.dot(affine)
         print "\nKinect points after:"
         print kinect_points[0]
         print "\nBaxter points at 0:"
         print baxter_points[0]
         
         print "\nAffine transformed points:"
-        print out
+        print outA
+        print "\n\n" + str(outD)
        
         
     def move_to_remove(self):
@@ -152,60 +169,23 @@ class Control:
         left_arm_plan = self.left_arm.plan()
         self.left_arm.go()
         
+	
 
-    def move_to_calibrate(self, p):
-        """
-        Move a Baxter arm to the passed in set calibration point
-        :return:
-        """
-
-        print '\n' + "============ Moving to calibration point " + str(p)
-
-        # Determine the point to be moved to
-        if p is 0:
-        	x = 0.8636009236
-        	y = -0.368322750181
-        	z = 0.0530422593042
-        	pose_target = self.create_pose_target(0.135648275014,		# Ww
-                                                  0.593566802955,		# Wx
-                                                  0.684224975318,		# Wy
-                                                  0.40139030764,		# Wz
-                                                  x, 		            # X
-                                                  y, 					# Y
-                                                  z)					# Z
-
-        elif p is 1:
-        	x = 0.721819217119
-        	y = 0.330656697069
-        	z = 0.175394781445
-        	pose_target = self.create_pose_target(0.0627252364583,		# Ww
-                                                  -0.606690013737,		# Wx
-                                                  -0.66071782326,		# Wy
-                                                  -0.437543974898,		# Wz
-                                                  x, 					# X
-                                                  y, 	    			# Y
-                                                  z)					# Z
-
-        elif p is 2:
-        	x = 0.707471834863
-        	y = -0.12437416324
-        	z = 0.114143664816
-        	pose_target = self.create_pose_target(0.0936050943338,		# Ww
-                                                  0.619311695189,		# Wx
-                                                  0.730291312474,		# Wy
-                                                  0.272700769052,		# Wz
-                                                  x, 					# X
-                                                  y, 					# Y
-                                                  z)					# Z
-
-        self.right_arm.set_goal_tolerance(0.01)
-        self.right_arm.set_planning_time(100)
-        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
-        self.right_arm.set_pose_target(pose_target)
-        right_arm_plan = self.right_arm.plan()
-        self.right_arm.go()
-        
-        return x, y, z
+    def return_current_pose(self, limb):
+    	"""
+    	Function to return the current pose of a limb
+    	"""
+    	if limb is "right":
+    		limb = self.right_arm
+    	elif limb is "left":
+    		limb = self.left_arm
+    		
+    	pose = limb.get_current_pose()
+    	x = pose.pose.position.x
+    	y = pose.pose.position.y
+    	z = pose.pose.position.z
+    	
+    	return x, y, z
 
     def detect_calibration_marker(self):
         """
@@ -256,6 +236,10 @@ class Control:
         except:
             print "No Circle found"
             return False
+            
+        # Show the Kinect feed on Baxters screen
+        msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
+        self.screen_pub.publish(msg)
 
         # Find the Centre of the largest box
         self.marker_center_x = int(x + (0.5 * w))
