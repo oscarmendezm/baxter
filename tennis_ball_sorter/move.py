@@ -71,6 +71,53 @@ class Control:
 
         # Convert the data to a usable format
         self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        
+        # View only the yellow colours in the image
+        hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
+        lower = np.array([20, 100, 100], dtype=np.uint8)
+        upper = np.array([100, 255, 255], dtype=np.uint8)
+        mask = cv2.inRange(hsv, lower, upper)
+        yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+
+        # Erode the image a few times in order to separate close objects
+        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        eroded_yellow_img = cv2.erode(yellow_img, element, iterations=2)
+
+        gray_image = cv2.cvtColor(eroded_yellow_img, cv2.COLOR_BGR2GRAY)
+
+        # Perform thresholding on the image to remove all objects behind a plain
+        ret, bin_img = cv2.threshold(gray_image, 0.3, 1, cv2.THRESH_BINARY_INV)
+
+        # Create a new array of type uint8 for the findContours function
+        con_img = np.array(gray_image, dtype=np.uint8)
+
+        # Find the contours of the image and then draw them on
+        contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(con_img, contours, -1, (128, 255, 0), 3)
+
+        try:
+            # Find the largest rectangle and discard the others
+            for i in range(0, len(contours)):
+                x, y, w, h = cv2.boundingRect(contours[i])
+                area = w * h
+                if i is 0:
+                    current_max = area
+                    max_x = i
+                else:
+                    if area > current_max:
+                        current_max = area
+                        max_x = i
+
+            # Display the largest box
+            x, y, w, h = cv2.boundingRect(contours[max_x])
+            self.marker_box = contours[max_x]
+            cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
+        except:
+            return False
+            
+        # Show the Kinect feed on Baxters screen
+        msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
+        self.screen_pub.publish(msg)
 
     def callback_depth(self, data):
         """
@@ -120,34 +167,35 @@ class Control:
 		                    point += 1
 		                    time.sleep(2)
 		        points_detected = False
-        print "\n\nBaxter Points:"
-        print "\n" + str(baxter_points)
-        print "\n\nKinect Points:"
-        print "\n" + str(kinect_points)
         
         kinect_points = np.asarray(kinect_points)
         baxter_points = np.asarray(baxter_points)
            
         retval, affine, inliers = cv2.estimateAffine3D(kinect_points, baxter_points, confidence=0.99)
-        print str(retval) + '\n'
         print str(affine) + '\n'
-        print str(inliers) + '\n'
         
         print "Test: \n"
         print "Kinect Points Before: "
-        print kinect_points[0]
-        outA = cv2.transform(kinect_points[0], kinect_points[0], affine)
-        outD = kinect_points.dot(affine)
-        print "\nKinect points after:"
-        print kinect_points[0]
-        print "\nBaxter points at 0:"
-        print baxter_points[0]
+        print "\n" + str(kinect_points[0])
+        print "\nBaxter Points Before: \n" + str(baxter_points[0])
         
-        print "\nAffine transformed points:"
-        print outA
-        print "\n\n" + str(outD)
-       
+
+        new_row_k = [1]
+        new_row_a = [0, 0, 0, 1]
         
+        kin = kinect_points[0].reshape(3, -1)
+        k_point = np.vstack([kin, new_row_k])
+        print "\nNew Kinect: \n" + str(k_point)
+
+        
+        aff = np.vstack([affine, new_row_a])
+        print "\n New Affine: \n" + str(aff)
+        
+        outD = aff.dot(k_point)
+        print "\nOut Dot: \n" + str(outD)
+        
+     
+      
     def move_to_remove(self):
         """
         Move Baxters Left arm out of the way of the Kinect for calibration
@@ -234,7 +282,6 @@ class Control:
             self.marker_box = contours[max_x]
             cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
         except:
-            print "No Circle found"
             return False
             
         # Show the Kinect feed on Baxters screen
