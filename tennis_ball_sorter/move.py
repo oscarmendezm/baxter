@@ -50,9 +50,9 @@ class Control:
                                                             queue_size=10)
 
         # We can get a list of all the groups in the robot
-        print "============ Robot GroupsPoses:"
-        print self.right_arm.get_current_pose()
-        print self.left_arm.get_current_pose()
+        # print "============ Robot GroupsPoses:"
+        # print self.right_arm.get_current_pose()
+        # print self.left_arm.get_current_pose()
 
         # Setup the subscribers and publishers
         self.rgb_sub = rospy.Subscriber("camera/rgb/image_rect_color", Image, self.callback_rgb)
@@ -146,6 +146,8 @@ class Control:
         # Move the left arm out of the way for calibration
         self.move_to_remove()
         
+        print "\n\nReady to calibrate. Move the arm to atleast 4 locations:"
+        
         # Wait until arm button is pressed to use frame
         while self.right_arm_navigator.button1 is False:
 			if self.right_arm_navigator.button0:
@@ -172,30 +174,18 @@ class Control:
         baxter_points = np.asarray(baxter_points)
            
         retval, affine, inliers = cv2.estimateAffine3D(kinect_points, baxter_points, confidence=0.99)
-        print str(affine) + '\n'
+
+        added_affine_row = [0, 0, 0, 1]
         
-        print "Test: \n"
-        print "Kinect Points Before: "
-        print "\n" + str(kinect_points[0])
-        print "\nBaxter Points Before: \n" + str(baxter_points[0])
+        self.affine_transform = np.vstack([affine, added_affine_row])
+        print "\n\n Calculated Affine: \n" + str(self.affine_transform)
+        
+        print "\nTesting Result: \n"
+        print "Original Baxter point: \n" + str(baxter_points[0])
+        cal_bax_point = self.calculate_translated_point(kinect_points[0])
+        print "\n\nCalculated Baxter point: \n" + str(cal_bax_point)
         
 
-        new_row_k = [1]
-        new_row_a = [0, 0, 0, 1]
-        
-        kin = kinect_points[0].reshape(3, -1)
-        k_point = np.vstack([kin, new_row_k])
-        print "\nNew Kinect: \n" + str(k_point)
-
-        
-        aff = np.vstack([affine, new_row_a])
-        print "\n New Affine: \n" + str(aff)
-        
-        outD = aff.dot(k_point)
-        print "\nOut Dot: \n" + str(outD)
-        
-     
-      
     def move_to_remove(self):
         """
         Move Baxters Left arm out of the way of the Kinect for calibration
@@ -217,7 +207,6 @@ class Control:
         left_arm_plan = self.left_arm.plan()
         self.left_arm.go()
         
-	
 
     def return_current_pose(self, limb):
     	"""
@@ -318,6 +307,44 @@ class Control:
 
         return pose_target
 
+		
+    def manipulate_orange_can(self):
+		"""
+		Function to find and manipulate an orange can
+		"""
+		self.find_can_location()
+	
+    def find_can_location(self):
+		"""
+		Function to search the RGB image for an orange can, and then return its co-ordinates
+		"""
+		
+		# View only the orange colours in the image
+		hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
+		lower = np.array([0, 100, 100], dtype=np.uint8)
+		upper = np.array([20, 255, 255], dtype=np.uint8)
+		mask = cv2.inRange(hsv, lower, upper)
+		orange_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+		
+		cv2.imshow("Orange", orange_img)
+		cv2.waitKey(3)
+		
+
+    def calculate_translated_point(self, kinect_point):
+    	"""
+    	Function to return a set of co-ordinates given Kinect co-ordinates and an affine transform
+    	"""
+    	
+    	kin = kinect_point.reshape(3, -1)
+    	new_row_k = [1]
+    	
+    	k_point = np.vstack([kin, new_row_k])
+    	
+    	outD = self.affine_transform.dot(k_point)
+    	
+    	calculated_point = [float(outD[0]), float(outD[1]), float(outD[2])]
+    	
+    	return calculated_point
 
 def main():
     """
@@ -330,6 +357,9 @@ def main():
 
     # Start the calibration process to link Baxter and Kinect Coordinates
     robot.calibrate_main()
+    
+    # Search for orange can and move to that location
+    robot.manipulate_orange_can()
 
     # Keep the topics updating
     rospy.spin()
