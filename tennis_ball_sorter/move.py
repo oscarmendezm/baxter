@@ -50,9 +50,9 @@ class Control:
                                                             queue_size=10)
 
         # We can get a list of all the groups in the robot
-        # print "============ Robot GroupsPoses:"
-        # print self.right_arm.get_current_pose()
-        # print self.left_arm.get_current_pose()
+        print "============ Robot GroupsPoses:"
+        print self.right_arm.get_current_pose()
+        print self.left_arm.get_current_pose()
 
         # Setup the subscribers and publishers
         self.rgb_sub = rospy.Subscriber("camera/rgb/image_rect_color", Image, self.callback_rgb)
@@ -72,48 +72,6 @@ class Control:
         # Convert the data to a usable format
         self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
         
-        # View only the yellow colours in the image
-        hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
-        lower = np.array([20, 100, 100], dtype=np.uint8)
-        upper = np.array([100, 255, 255], dtype=np.uint8)
-        mask = cv2.inRange(hsv, lower, upper)
-        yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
-
-        # Erode the image a few times in order to separate close objects
-        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-        eroded_yellow_img = cv2.erode(yellow_img, element, iterations=2)
-
-        gray_image = cv2.cvtColor(eroded_yellow_img, cv2.COLOR_BGR2GRAY)
-
-        # Perform thresholding on the image to remove all objects behind a plain
-        ret, bin_img = cv2.threshold(gray_image, 0.3, 1, cv2.THRESH_BINARY_INV)
-
-        # Create a new array of type uint8 for the findContours function
-        con_img = np.array(gray_image, dtype=np.uint8)
-
-        # Find the contours of the image and then draw them on
-        contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(con_img, contours, -1, (128, 255, 0), 3)
-
-        try:
-            # Find the largest rectangle and discard the others
-            for i in range(0, len(contours)):
-                x, y, w, h = cv2.boundingRect(contours[i])
-                area = w * h
-                if i is 0:
-                    current_max = area
-                    max_x = i
-                else:
-                    if area > current_max:
-                        current_max = area
-                        max_x = i
-
-            # Display the largest box
-            x, y, w, h = cv2.boundingRect(contours[max_x])
-            self.marker_box = contours[max_x]
-            cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
-        except:
-            return False
             
         # Show the Kinect feed on Baxters screen
         msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
@@ -150,26 +108,27 @@ class Control:
         
         # Wait until arm button is pressed to use frame
         while self.right_arm_navigator.button1 is False:
-			if self.right_arm_navigator.button0:
-			    # Show the Kinect feed on Baxters screen
-			    msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
-			    self.screen_pub.publish(msg)
-
-			    while not points_detected:
-		        	x, y, z = self.return_current_pose("right")
-		        	baxter_points.append([x, y, z])
-		    		if (self.rgb_img is not None) and (self.depth_img is not None):
-		    		    points_detected = self.detect_calibration_marker()
-		    		    if points_detected:
-		    		        kinect_points.append([float(self.marker_center_x),
-		                						  float(self.marker_center_y),
-		                						  float(self.marker_depth)])
-		                    print "Kinect: " + str(kinect_points[point])
-		                    print "Baxter: " + str(baxter_points[point])
-		                    point += 1
-		                    time.sleep(2)
-		        points_detected = False
-        
+            if self.right_arm_navigator.button0:
+                while not points_detected:
+                    x, y, z = self.return_current_pose("right")
+                    baxter_points.append([x, y, z])
+                    if (self.rgb_img is not None) and (self.depth_img is not None):
+                        try:
+                            points_detected = self.detect_calibration_marker()
+                            if self.marker_depth is 0.0:
+                                points_detected = False
+                        except:
+                            points_detected = False
+                        if points_detected:
+                            kinect_points.append([float(self.marker_center_x),
+                            					 float(self.marker_center_y), 
+                            					 float(self.marker_depth)])
+                            print "Kinect: " + str(kinect_points[point])
+                            print "Baxter: " + str(baxter_points[point])
+                            point += 1
+                            time.sleep(1)
+                points_detected = False
+            
         kinect_points = np.asarray(kinect_points)
         baxter_points = np.asarray(baxter_points)
            
@@ -193,10 +152,10 @@ class Control:
         x = -0.0427936490711
     	y = 0.626374995844
     	z = 0.264948886765
-    	pose_target = self.create_pose_target(0.174085627239,		# Ww
-                                              0.316004690891,		# Wx
-                                              -0.826880690999,		# Wy
-                                              0.431397209745,		# Wz
+    	pose_target = self.create_pose_target(0.0977083761873,		# Ww
+                                              0.714003795927,		# Wx
+                                              -0.00449042997044,	# Wy
+                                              0.693275910921,		# Wz
                                               x, 		            # X
                                               y, 					# Y
                                               z)					# Z
@@ -229,6 +188,10 @@ class Control:
         Function to detect the marker on
         :return:
         """
+        
+        self.marker_center_x = None
+        self.marker_center_y = None
+        self.marker_depth = None
         
         # View only the yellow colours in the image
         hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
@@ -272,10 +235,7 @@ class Control:
             cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, lineType=8, shift=0)
         except:
             return False
-            
-        # Show the Kinect feed on Baxters screen
-        msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
-        self.screen_pub.publish(msg)
+           
 
         # Find the Centre of the largest box
         self.marker_center_x = int(x + (0.5 * w))
@@ -319,15 +279,36 @@ class Control:
 		Function to search the RGB image for an orange can, and then return its co-ordinates
 		"""
 		
-		# View only the orange colours in the image
-		hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
-		lower = np.array([0, 100, 100], dtype=np.uint8)
-		upper = np.array([20, 255, 255], dtype=np.uint8)
-		mask = cv2.inRange(hsv, lower, upper)
-		orange_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+		while raw_input("Enter: ") != "g":
+			waiting = None
+			
+		points_detected = False
+
+		while not points_detected:
+			if (self.rgb_img is not None) and (self.depth_img is not None):
+			    try:
+			        points_detected = self.detect_calibration_marker()
+			    except:
+			        pass           
+		self.marker_depth	                
+		kinect_point = np.array([self.marker_center_x, self.marker_center_y, self.marker_depth])
 		
-		cv2.imshow("Orange", orange_img)
-		cv2.waitKey(3)
+		print kinect_point
+		x, y, z = self.calculate_translated_point(kinect_point)
+		print x 
+		print y
+		print z
+		pose_target = self.create_pose_target(0.0977083761873,		# Ww
+                                              0.714003795927,		# Wx
+                                              -0.00449042997044,	# Wy
+                                              0.693275910921,		# Wz
+								 			  x, y, z)
+								 
+		self.right_arm.set_goal_tolerance(0.0001)
+		self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+		self.right_arm.set_pose_target(pose_target)
+		right_arm_plan = self.right_arm.plan()
+		self.right_arm.go()
 		
 
     def calculate_translated_point(self, kinect_point):
@@ -341,10 +322,8 @@ class Control:
     	k_point = np.vstack([kin, new_row_k])
     	
     	outD = self.affine_transform.dot(k_point)
-    	
-    	calculated_point = [float(outD[0]), float(outD[1]), float(outD[2])]
-    	
-    	return calculated_point
+    	    	
+    	return float(outD[0]), float(outD[1]), float(outD[2])
 
 def main():
     """
