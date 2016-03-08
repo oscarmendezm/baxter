@@ -2,6 +2,8 @@ __author__ = 'Rhys Bryant'
 
 # Imports
 import numpy as np
+from numpy import *
+from math import sqrt
 import cv
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
@@ -131,19 +133,49 @@ class Control:
             
         kinect_points = np.asarray(kinect_points)
         baxter_points = np.asarray(baxter_points)
-           
-        retval, affine, inliers = cv2.estimateAffine3D(kinect_points, baxter_points, confidence=0.99)
+        
+        R, t = self.calculate_rigid_transform(kinect_points, baxter_points)
+        
+        print R
+        print t   
+        
+    def calculate_rigid_transform(self, A, B):
+		"""
+		Calculate the rigid transform for the kinect and Baxter
+		R = 3x3 Rotation Matrix
+		t = 3x1 column vector
+		"""
+		
+		assert len(A) == len(B)
+		
+		N = A.shape[0]; # total points
+		
+		centroid_A = mean(A, axis=0)
+		
+		centroid_B = mean(B, axis=0)
+		
+		# centre the points
+		AA = A - tile(centroid_A, (N, 1))
+		BB = B - tile(centroid_B, (N, 1))
+		
+		# dot is matrix multiplication for array
+		H = transpose(AA) * BB
+		U, S, Vt = linalg.svd(H)
+		R = Vt.T * U.T
+		
+		# special reflection case
+		if linalg.det(R) < 0:
+		    print "Reflection detected"
+		    Vt[2,:] *= -1
+		    R = Vt.T * U.T
+		    
+		t = -R*centroid_A.T + centroid_B.T
+		print t
+		
+		return R, t
 
-        added_affine_row = [0, 0, 0, 1]
-        
-        self.affine_transform = np.vstack([affine, added_affine_row])
-        print "\n\n Calculated Affine: \n" + str(self.affine_transform)
-        
-        print "\nTesting Result: \n"
-        print "Original Baxter point: \n" + str(baxter_points[0])
-        cal_bax_point = self.calculate_translated_point(kinect_points[0])
-        print "\n\nCalculated Baxter point: \n" + str(cal_bax_point)
-        
+		
+		
 
     def move_to_remove(self):
         """
