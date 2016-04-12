@@ -64,7 +64,6 @@ class Control:
 
         # Setup the subscribers and publishers
         self.rgb_sub = rospy.Subscriber("camera/rgb/image_rect_color", Image, self.callback_rgb)
-        self.depth_sub = rospy.Subscriber("camera/depth_registered/image_raw", Image, self.callback_depth)
         self.points_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2,  self.callback_points) 
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
                                                            moveit_msgs.msg.DisplayTrajectory,
@@ -86,67 +85,18 @@ class Control:
         :param data:
         :return:
         """
+        
+        
 
         # Convert the data to a usable format
         self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
         try:
-		    # View only the yellow colours in the image
-		    hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
-		    lower = np.array([20, 100, 100], dtype=np.uint8)
-		    upper = np.array([100, 255, 255], dtype=np.uint8)
-		    mask = cv2.inRange(hsv, lower, upper)
-		    yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
-
-		    # Erode the image a few times in order to separate close objects
-		    element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-		    eroded_yellow_img = cv2.erode(yellow_img, element, iterations=2)
-
-		    gray_image = cv2.cvtColor(eroded_yellow_img, cv2.COLOR_BGR2GRAY)
-
-		    # Perform thresholding on the image to remove all objects behind a plain
-		    ret, bin_img = cv2.threshold(gray_image, 0.3, 1, cv2.THRESH_BINARY_INV)
-
-		    # Create a new array of type uint8 for the findContours function
-		    con_img = np.array(gray_image, dtype=np.uint8)
-
-		    # Find the contours of the image and then draw them on
-		    contours, hierarchy = cv2.findContours(con_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-		    cv2.drawContours(con_img, contours, -1, (128, 255, 0), 3)
-
-		    
-		    # Find the largest rectangle and discard the others
-		    for i in range(0, len(contours)):
-		        x, y, w, h = cv2.boundingRect(contours[i])
-		        area = w * h
-		        if i is 0:
-		            current_max = area
-		            max_x = i
-		        else:
-		            if area > current_max:
-		                current_max = area
-		                max_x = i
-
-		    # Display the largest box
-		    x, y, w, h = cv2.boundingRect(contours[max_x])
-		    self.marker_box = contours[max_x]
-		    cv2.rectangle(self.rgb_img, (x, y), ((x+w), (y+h)), (255, 0, 127), thickness=5, 							lineType=8, shift=0)
+            self.detect_calibration_marker()
         except:
         	pass
         # Show the Kinect feed on Baxters screen
         msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
         self.screen_pub.publish(msg)
-
-    def callback_depth(self, data):
-        """
-        Function to handle the arrival of depth data
-        :param data:
-        :return:
-        """
-
-        # Convert the data to a usable format
-        depth = self.bridge.imgmsg_to_cv2(data, "16UC1")
-        self.depth_img = np.array(depth, dtype=np.float32)
-        cv2.normalize(self.depth_img, self.depth_img, 0, 1, cv2.NORM_MINMAX)                
 
     def calibrate_main(self):
         """
@@ -170,13 +120,12 @@ class Control:
             if self.right_arm_navigator.button0:
                 while not points_detected:
                     x, y, z = self.return_current_pose("right")
-                    if (self.rgb_img is not None) and (self.depth_img is not None):
+                    if (self.rgb_img is not None):
                         try:
-                            points_detected = self.detect_calibration_marker()
-                            if self.marker_depth is 0.0:
-                                points_detected = False
+                            points_detected = self.get_marker()
                         except:
                             points_detected = False
+                            print "Exception"
                         if points_detected:
                             baxter_points.append([x, y, z])
                             kinect_points.append([float(self.marker_center_x),
@@ -202,7 +151,7 @@ class Control:
         
     def calculate_transform(self, K, B):
         # Ransac parameters
-		ransac_iterations = 5000  # Number of iterations
+		ransac_iterations = 2000  # Number of iterations
 		n_samples = len(K)
 		best_rmse = None
 		best_R = None
@@ -330,6 +279,55 @@ class Control:
     	z = pose.pose.position.z
     	
     	return x, y, z
+    	
+    def get_marker(self):
+    
+        box_center_x, box_center_y = self.detect_calibration_marker()
+    
+        # Create loop to remove erronious results
+        value_not_found = True
+        value = 0
+        
+        while value_not_found:
+            values_list = [None, None]
+            
+            # Using the center of the marker, find the depth value
+            self.marker_center_x = self.cloud[box_center_x][box_center_y][0]
+            self.marker_center_y = self.cloud[box_center_x][box_center_y][1]
+            self.marker_center_z = self.cloud[box_center_x][box_center_y][2]
+            
+            print "Got Values"
+            
+            values_list[value] = [self.marker_center_x, self.marker_center_y, self.marker_center_z]
+            value += 1
+            if value == 2:
+             
+                print "Values List:"
+                print values_list
+                difference_x = abs(values_list[0][0]) - abs(values_list[1][0])
+                difference_y = abs(values_list[0][1]) - abs(values_list[1][1])
+                difference_z = abs(values_list[0][2]) - abs(values_list[1][2])
+                
+                print difference_x
+                
+                if (abs(difference_x) > 0.1) or \
+        			(abs(difference_x) > 0.1) or \
+        				(abs(difference_x) > 0.1):
+        				values_list = []
+        				print "Getting new Values"
+                else:
+        		    value_not_found = False
+        		    value = 0   
+     
+            
+            time.sleep(3)
+        	
+        	
+        # Check if the function returned valid data and return the answer
+        if math.isnan(self.marker_center_x) or math.isnan(self.marker_center_y) or math.isnan(self.marker_center_z):
+            return False
+        else:
+            return True
 
     def detect_calibration_marker(self):
         """
@@ -339,7 +337,6 @@ class Control:
         
         self.marker_center_x = None
         self.marker_center_y = None
-        self.marker_depth = None
         
         # View only the yellow colours in the image
         hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
@@ -389,18 +386,9 @@ class Control:
         box_center_x = int(x + (0.5 * w))
         box_center_y = int(y + (0.5 * h))
         
-        # Using the center of the marker, find the depth value
-        # self.marker_depth = self.depth_img[self.marker_center_x][self.marker_center_y]
+        return box_center_x, box_center_y
         
-        self.marker_center_x = self.cloud[box_center_x][box_center_y][0]
-        self.marker_center_y = self.cloud[box_center_x][box_center_y][1]
-        self.marker_center_z = self.cloud[box_center_x][box_center_y][2]
         
-        # Check if the function returned valid data and return the answer
-        if math.isnan(self.marker_center_x) or math.isnan(self.marker_center_y) or math.isnan(self.marker_center_z):
-            return False
-        else:
-            return True
 
     def create_pose_target(self, Ww, Wx, Wy, Wz, x, y, z):
         """
@@ -437,7 +425,7 @@ class Control:
 		points_detected = False
 
 		while not points_detected:
-			if (self.rgb_img is not None) and (self.depth_img is not None):
+			if (self.rgb_img is not None):
 			    try:
 			        points_detected = self.detect_calibration_marker()
 			    except:
@@ -464,8 +452,7 @@ class Control:
 		self.right_arm.set_planner_id("RRTConnectkConfigDefault")
 		self.right_arm.set_pose_target(pose_target)
 		right_arm_plan = self.right_arm.plan()
-		
-self.right_arm.go()
+		self.right_arm.go()
 		
 
     def calculate_translated_point(self, K):
