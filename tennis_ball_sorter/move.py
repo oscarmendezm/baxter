@@ -119,18 +119,16 @@ class Control:
         while self.right_arm_navigator.button1 is False:
             if self.right_arm_navigator.button0:
                 while not points_detected:
-                    x, y, z = self.return_current_pose("right")
+                    Bx, By, Bz = self.return_current_pose("right")
                     if (self.rgb_img is not None):
                         try:
-                            points_detected = self.get_marker()
+                            points_detected, Kx, Ky, Kz = self.get_marker()
                         except:
                             points_detected = False
                             print "Exception"
                         if points_detected:
-                            baxter_points.append([x, y, z])
-                            kinect_points.append([float(self.marker_center_x),
-                            					 float(self.marker_center_y), 
-                            					 float(self.marker_center_z)])
+                            baxter_points.append([Bx, By, Bz])
+                            kinect_points.append([Kx, Ky, Kz])
                             print "Kinect: " + str(kinect_points[point])
                             print "Baxter: " + str(baxter_points[point])
                             point += 1
@@ -287,28 +285,50 @@ class Control:
         # Create loop to remove erronious results
         value_not_found = True
         value = 0
+        values_list = []
         
         while value_not_found:
-            values_list = [None, None]
+            
+            print "Waiting to get point..."
+            time.sleep(3)
             
             # Using the center of the marker, find the depth value
             self.marker_center_x = self.cloud[box_center_x][box_center_y][0]
             self.marker_center_y = self.cloud[box_center_x][box_center_y][1]
             self.marker_center_z = self.cloud[box_center_x][box_center_y][2]
             
-            print "Got Values"
-            
-            values_list[value] = [self.marker_center_x, self.marker_center_y, self.marker_center_z]
-            value += 1
-            if value == 2:
-             
-                print "Values List:"
-                print values_list
-                difference_x = abs(values_list[0][0]) - abs(values_list[1][0])
-                difference_y = abs(values_list[0][1]) - abs(values_list[1][1])
-                difference_z = abs(values_list[0][2]) - abs(values_list[1][2])
+            if math.isnan(self.marker_center_x) or math.isnan(self.marker_center_y) or math.isnan(self.marker_center_z):
                 
-                print difference_x
+                # Input invalid data if Nan found
+                values_list.append(None)
+            
+            else:
+                values_list.append([self.marker_center_x, self.marker_center_y, self.marker_center_z])
+            
+            print "Got Value:"
+            print values_list[value]
+            
+            value += 1
+            
+            if value == 2:
+            
+                try:
+             
+                    difference_x = abs(values_list[0][0]) - abs(values_list[1][0])
+                    difference_y = abs(values_list[0][1]) - abs(values_list[1][1])
+                    difference_z = abs(values_list[0][2]) - abs(values_list[1][2])
+                
+                    print "difference_x:"
+                    print difference_x
+                    print "difference_y:"
+                    print difference_y
+                    print "difference_z:"
+                    print difference_z
+                    
+                except: 
+                    value = 0
+                    values_list = []
+                    pass
                 
                 if (abs(difference_x) > 0.1) or \
         			(abs(difference_x) > 0.1) or \
@@ -317,10 +337,11 @@ class Control:
         				print "Getting new Values"
                 else:
         		    value_not_found = False
-        		    value = 0   
-     
+        		    print "Using last values found:"
+        		    print values_list[1][0]
+        		    value = 0
             
-            time.sleep(3)
+        return True, values_list[1][0], values_list[1][1], values_list[1][2] 
         	
         	
         # Check if the function returned valid data and return the answer
@@ -427,11 +448,11 @@ class Control:
 		while not points_detected:
 			if (self.rgb_img is not None):
 			    try:
-			        points_detected = self.detect_calibration_marker()
+			        points_detected, Kx, Ky, Kz = self.get_marker()
 			    except:
 			        pass           
 	                
-		kinect_point = np.array([self.marker_center_x, self.marker_center_y, self.marker_center_z])
+		kinect_point = np.array([Kx, Ky, Kz])
 		
 		print kinect_point
 		new_B = self.calculate_translated_point(kinect_point)
