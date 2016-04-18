@@ -52,6 +52,8 @@ class Control:
         self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
         self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
         self.right_arm_navigator = Navigator('right')
+        
+        print self.right_arm.get_planning_frame()
 
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
                                                             moveit_msgs.msg.DisplayTrajectory,
@@ -63,7 +65,7 @@ class Control:
         print self.left_arm.get_current_pose()
 
         # Setup the subscribers and publishers
-        self.rgb_sub = rospy.Subscriber("camera/rgb/image_rect_color", Image, self.callback_rgb)
+        self.rgb_sub = rospy.Subscriber("/camera/rgb/image_rect_color", Image, self.callback_rgb)
         self.points_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2,  self.callback_points) 
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
                                                            moveit_msgs.msg.DisplayTrajectory,
@@ -75,18 +77,24 @@ class Control:
 		Function to handle the arrival of pointcloud data
 		"""
 		
-		cloud = list(pc2.read_points(data, skip_nans=False, field_names=("x", "y", "z")))
-		cloud = np.resize(cloud, [640, 480, 3])
-		self.cloud = cloud
+		#cloud = list(pc2.read_points(data, skip_nans=False))
+		#cloud = np.resize(cloud, [640, 480, 3])
+		#self.cloud = cloud
 		
+		cloud_msg = pc2.read_points(data, field_names = ("x", "y", "z"), skip_nans=False)
+		cloud_data = []
+		for p in cloud_msg:
+		    cloud_data.append([p[0],p[1],p[2]])
+		cloud_data = np.array(cloud_data)
+		self.cloud2 = np.reshape(cloud_data, [640, 480,3], order='F')
+		#print self.cloud2.shape
+            		
     def callback_rgb(self, data):
         """
         Function to handle the arrival of RGB data
         :param data:
         :return:
         """
-        
-        
 
         # Convert the data to a usable format
         self.rgb_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
@@ -94,7 +102,7 @@ class Control:
             self.detect_calibration_marker()
         except:
         	pass
-        # Show the Kinect feed on Baxters screen
+        #Show the Kinect feed on Baxters screen
         msg = self.bridge.cv2_to_imgmsg(self.rgb_img, encoding="bgr8")
         self.screen_pub.publish(msg)
 
@@ -117,6 +125,7 @@ class Control:
         
         # Wait until arm button is pressed to use frame
         while self.right_arm_navigator.button1 is False:
+            #rospy.spin_once()
             if self.right_arm_navigator.button0:
                 while not points_detected:
                     Bx, By, Bz = self.return_current_pose("right")
@@ -282,20 +291,27 @@ class Control:
     
         box_center_x, box_center_y = self.detect_calibration_marker()
     
+        print "Marker Centre (PX): ", box_center_x, box_center_y
         # Create loop to remove erronious results
         value_not_found = True
         value = 0
         values_list = []
         
+        #for i in range(0,640):
+            #for j in range(0,480):
+                #print self.cloud2[i][j][0], self.cloud2[i][j][1], self.cloud2[i][j][2]
+        
         while value_not_found:
             
             print "Waiting to get point..."
-            time.sleep(3)
+            time.sleep(1)
             
             # Using the center of the marker, find the depth value
-            self.marker_center_x = self.cloud[box_center_x][box_center_y][0]
-            self.marker_center_y = self.cloud[box_center_x][box_center_y][1]
-            self.marker_center_z = self.cloud[box_center_x][box_center_y][2]
+            self.marker_center_x = self.cloud2[box_center_x][box_center_y][0]
+            self.marker_center_y = self.cloud2[box_center_x][box_center_y][1]
+            self.marker_center_z = self.cloud2[box_center_x][box_center_y][2]
+         
+            print "Marker Centre (M): ", self.marker_center_x, self.marker_center_y, self.marker_center_z
             
             if math.isnan(self.marker_center_x) or math.isnan(self.marker_center_y) or math.isnan(self.marker_center_z):
                 
@@ -304,6 +320,7 @@ class Control:
             
             else:
                 values_list.append([self.marker_center_x, self.marker_center_y, self.marker_center_z])
+                self.marker_center_x = None
             
             print "Got Value:"
             print values_list[value]
@@ -314,9 +331,9 @@ class Control:
             
                 try:
              
-                    difference_x = abs(values_list[0][0]) - abs(values_list[1][0])
-                    difference_y = abs(values_list[0][1]) - abs(values_list[1][1])
-                    difference_z = abs(values_list[0][2]) - abs(values_list[1][2])
+                    difference_x = abs(values_list[0][0] - values_list[1][0])
+                    difference_y = abs(values_list[0][1] - values_list[1][1])
+                    difference_z = abs(values_list[0][2] - values_list[1][2])
                 
                     print "difference_x:"
                     print difference_x
@@ -331,8 +348,8 @@ class Control:
                     pass
                 
                 if (abs(difference_x) > 0.1) or \
-        			(abs(difference_x) > 0.1) or \
-        				(abs(difference_x) > 0.1):
+        			(abs(difference_y) > 0.1) or \
+        				(abs(difference_z) > 0.1):
         				values_list = []
         				print "Getting new Values"
                 else:
@@ -340,6 +357,7 @@ class Control:
         		    print "Using last values found:"
         		    print values_list[1][0]
         		    value = 0
+        		    print values_list
             
         return True, values_list[1][0], values_list[1][1], values_list[1][2] 
         	
@@ -406,7 +424,6 @@ class Control:
         # Find the Centre of the largest box
         box_center_x = int(x + (0.5 * w))
         box_center_y = int(y + (0.5 * h))
-        
         return box_center_x, box_center_y
         
         
@@ -440,40 +457,41 @@ class Control:
 		Function to search the RGB image for an orange can, and then return its co-ordinates
 		"""
 		
-		while raw_input("Enter: ") != "g":
-			waiting = None
+		while 1:
+			while raw_input("Enter: ") != "g":
+				waiting = None
 			
-		points_detected = False
+			points_detected = False
 
-		while not points_detected:
-			if (self.rgb_img is not None):
-			    try:
-			        points_detected, Kx, Ky, Kz = self.get_marker()
-			    except:
-			        pass           
-	                
-		kinect_point = np.array([Kx, Ky, Kz])
+			while not points_detected:
+				if (self.rgb_img is not None):
+					try:
+					    points_detected, Kx, Ky, Kz = self.get_marker()
+					except:
+					    pass           
+			            
+			kinect_point = np.array([Kx, Ky, Kz])
 		
-		print kinect_point
-		new_B = self.calculate_translated_point(kinect_point)
+			print kinect_point
+			new_B = self.calculate_translated_point(kinect_point)
 		
-		new_B = np.asarray(new_B)
+			new_B = np.asarray(new_B)
 
-		x = new_B[0][0]
-		y = new_B[0][1]
-		z = new_B[0][2]
+			x = new_B[0][0]
+			y = new_B[0][1]
+			z = new_B[0][2]
 
-		pose_target = self.create_pose_target(0.0977083761873,		# Ww
-                                              0.714003795927,		# Wx
-                                              -0.00449042997044,	# Wy
-                                              0.693275910921,		# Wz
-								 			  x, y, z)
-								 
-		self.right_arm.set_goal_tolerance(0.0001)
-		self.right_arm.set_planner_id("RRTConnectkConfigDefault")
-		self.right_arm.set_pose_target(pose_target)
-		right_arm_plan = self.right_arm.plan()
-		self.right_arm.go()
+			pose_target = self.create_pose_target(0.0977083761873,		# Ww
+		                                          0.714003795927,		# Wx
+		                                          -0.00449042997044,	# Wy
+		                                          0.693275910921,		# Wz
+									 			  x, y, z)
+									 
+			self.right_arm.set_goal_tolerance(0.0001)
+			self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+			self.right_arm.set_pose_target(pose_target)
+			right_arm_plan = self.right_arm.plan()
+			self.right_arm.go()
 		
 
     def calculate_translated_point(self, K):
