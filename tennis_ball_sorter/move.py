@@ -125,8 +125,9 @@ class Control:
         
         # Wait until arm button is pressed to use frame
         while self.right_arm_navigator.button1 is False:
-            #rospy.spin_once()
+            
             if self.right_arm_navigator.button0:
+                print "Number of points collected: ", len(kinect_points)
                 while not points_detected:
                     Bx, By, Bz = self.return_current_pose("right")
                     if (self.rgb_img is not None):
@@ -292,82 +293,25 @@ class Control:
         box_center_x, box_center_y = self.detect_calibration_marker()
     
         print "Marker Centre (PX): ", box_center_x, box_center_y
-        # Create loop to remove erronious results
-        value_not_found = True
-        value = 0
-        values_list = []
         
-        #for i in range(0,640):
-            #for j in range(0,480):
-                #print self.cloud2[i][j][0], self.cloud2[i][j][1], self.cloud2[i][j][2]
+        print "Waiting to get point..."
+        time.sleep(1)
         
-        while value_not_found:
-            
-            print "Waiting to get point..."
-            time.sleep(1)
-            
-            # Using the center of the marker, find the depth value
-            self.marker_center_x = self.cloud2[box_center_x][box_center_y][0]
-            self.marker_center_y = self.cloud2[box_center_x][box_center_y][1]
-            self.marker_center_z = self.cloud2[box_center_x][box_center_y][2]
-         
-            print "Marker Centre (M): ", self.marker_center_x, self.marker_center_y, self.marker_center_z
-            
-            if math.isnan(self.marker_center_x) or math.isnan(self.marker_center_y) or math.isnan(self.marker_center_z):
-                
-                # Input invalid data if Nan found
-                values_list.append(None)
-            
-            else:
-                values_list.append([self.marker_center_x, self.marker_center_y, self.marker_center_z])
-                self.marker_center_x = None
-            
-            print "Got Value:"
-            print values_list[value]
-            
-            value += 1
-            
-            if value == 2:
-            
-                try:
-             
-                    difference_x = abs(values_list[0][0] - values_list[1][0])
-                    difference_y = abs(values_list[0][1] - values_list[1][1])
-                    difference_z = abs(values_list[0][2] - values_list[1][2])
-                
-                    print "difference_x:"
-                    print difference_x
-                    print "difference_y:"
-                    print difference_y
-                    print "difference_z:"
-                    print difference_z
-                    
-                except: 
-                    value = 0
-                    values_list = []
-                    pass
-                
-                if (abs(difference_x) > 0.1) or \
-        			(abs(difference_y) > 0.1) or \
-        				(abs(difference_z) > 0.1):
-        				values_list = []
-        				print "Getting new Values"
-                else:
-        		    value_not_found = False
-        		    print "Using last values found:"
-        		    print values_list[1][0]
-        		    value = 0
-        		    print values_list
-            
-        return True, values_list[1][0], values_list[1][1], values_list[1][2] 
-        	
-        	
-        # Check if the function returned valid data and return the answer
+        # Using the center of the marker, find the depth value
+        self.marker_center_x = self.cloud2[box_center_x][box_center_y][0]
+        self.marker_center_y = self.cloud2[box_center_x][box_center_y][1]
+        self.marker_center_z = self.cloud2[box_center_x][box_center_y][2]
+     
+
         if math.isnan(self.marker_center_x) or math.isnan(self.marker_center_y) or math.isnan(self.marker_center_z):
             return False
+        
         else:
-            return True
-
+            values_list = [self.marker_center_x, self.marker_center_y, self.marker_center_z]
+            print "Got Value:"
+            return True, values_list[0], values_list[1], values_list[2] 
+        	
+        	
     def detect_calibration_marker(self):
         """
         Function to detect the marker on
