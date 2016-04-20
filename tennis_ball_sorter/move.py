@@ -114,6 +114,36 @@ class Control:
         kinect_points = []
         baxter_points = []
         
+        # List of valid Poses that will be run through during calibration
+        pose_list = [[0.787082536265 , 0.0464219034876 , 0.113832593889 , 0.0902413158339 , -0.699323807464 , -0.579964001839 , -0.407976070134],
+                     [0.9203820355 , -0.0729821186959 , 0.109042642348 , 0.203073548259 , -0.669931735536 , -0.61986528851 , -0.354569637475],
+                     [0.9176410591 , 0.236163363183 , 0.105185924381 , 0.133509561856 , -0.678203164309 , -0.55311662273 , -0.465056627168],
+                     [0.76350579339 , 0.422182771222 , -0.0123084298775 , 0.0680085666316 , -0.634769281773 , -0.587676513534 , -0.497070527414],
+                     [0.775824047998 , 0.384138797362 , 0.284389568413 , 0.184226847216 , -0.715274096694 , -0.588940201608 , -0.328013527607],
+                     [0.600601637936 , 0.431651264303 , 0.428590173906 , 0.218921719552 , -0.645882662974 , -0.699813998697 , -0.212530547465],
+                     [0.516591138013 , 0.416104256118 , 0.541125162777 , 0.262576354547 , -0.691399421877 , -0.55411854129 , -0.382064313511],
+                     [0.483131948853 , 0.00118009192429 , 0.497918440567 , 0.253281043624 , -0.758986070501 , -0.547195488701 , -0.245694840952],
+                     [0.549003175022 , -0.419982200359 , 0.511696354884 , 0.141002812329 , -0.654664096357 , -0.676898302167 , -0.305518929659],
+                     [0.529469057705 , -0.607839161102 , 0.279883892425 , 0.173437135357 , -0.604096535132 , -0.721157192148 , -0.291409060486],
+                     [0.485909750256 , -0.498242031097 , 0.00649625484521 , 0.0858643850182 , -0.658568325994 , -0.638571756475 , -0.38876879918],
+                     [0.7491075757 , -0.388328948562 , -0.000115268865141 , 0.0931689739491 , -0.66551053709 , -0.646662436881 , -0.360891895229],
+                     [0.946636223637 , -0.19432699517 , 0.103586046609 , 0.00330010896101 , 0.691640804844 , 0.533276278925 , 0.487071367144],
+                     [0.679994195923 , -0.210525593004 , 0.248048750902 , 0.170143740573 , -0.704139830241 , -0.603049669678 , -0.334019913947],
+                     [0.493920342152 , -0.075676206338 , 0.396420645852 , 0.334966178067 , -0.727200936063 , -0.576532713895 , -0.163053635189],
+                     [0.652274318314 , -0.033570810864 , 0.143141847077 , 0.140690536779 , -0.719589897534 , -0.60597132622 , -0.308537362449],
+                     [0.911040302856 , -0.0174263396378 , 0.00375330369347 , 0.052416693096 , -0.655659344061 , -0.67571580595 , -0.33282347336],
+                     [0.727526966104 , -0.201538544521 , -0.0735051015182 , 0.219077541443 , -0.666193924813 , -0.610464866951 , -0.368134936668],
+                     [0.719385936049 , 0.331423797465 , -0.0800682535388 , 0.196931104357 , -0.701994058567 , -0.570930584021 , -0.377439730425],
+                     [0.908010633512 , 0.20852277378 , -0.0328940279839 , 0.00698933370487 , -0.696489059558 , -0.516879586552 , -0.497684269528],
+                     [1.02756200168 , 0.0943452857437 , 0.474060022946 , 0.0958337720433 , -0.663153756165 , -0.421832353445 , -0.610819490035],
+                     [0.888779964408 , -0.221033119113 , 0.10215364478 , 0.127120062117 , -0.645639690727 , -0.601487870914 , -0.452992517277],
+                     [0.77456558276 , 0.520625244804 , 0.371763671161 , 0.141996073338 , -0.581230124658 , -0.457610746921 , -0.657724153159],
+                     [0.589336711251 , 0.381070025288 , 0.300442784482 , 0.31933741268 , -0.711970524784 , -0.556563933495 , -0.285233547524],
+                     [0.59317984995 , -0.0540883002897 , 0.310744182076 , 0.289372750853 , -0.694005777143 , -0.642692851518 , -0.146851254553],
+                     [0.59317984995 , -0.0540883002897 , 0.310744182076 , 0.289372750853 , -0.694005777143 , -0.642692851518 , -0.146851254553],
+                     [0.635221059044 , -0.0529884621621 , 0.0615424082709 , 0.128453076828 , -0.68436490893 , -0.677004851394 , -0.238346197091],
+                     [0.736894461595 , -0.359083080285 , 0.0957591406134 , 0.230365370048 , -0.660658834617 , -0.656282894677 , -0.282408326152]]
+        
         points_detected = False
         
         point = 0
@@ -121,29 +151,30 @@ class Control:
         # Move the left arm out of the way for calibration
         self.move_to_remove()
         
-        print "\n\nReady to calibrate. Move the arm to atleast 4 locations:"
+        print "\n\nStaring Calibration:"
         
-        # Wait until arm button is pressed to use frame
-        while self.right_arm_navigator.button1 is False:
-            
-            if self.right_arm_navigator.button0:
-                print "Number of points collected: ", len(kinect_points)
-                while not points_detected:
-                    Bx, By, Bz = self.return_current_pose("right")
-                    if (self.rgb_img is not None):
-                        try:
-                            points_detected, Kx, Ky, Kz = self.get_marker()
-                        except:
-                            points_detected = False
-                            print "Exception"
-                        if points_detected:
-                            baxter_points.append([Bx, By, Bz])
-                            kinect_points.append([Kx, Ky, Kz])
-                            print "Kinect: " + str(kinect_points[point])
-                            print "Baxter: " + str(baxter_points[point])
-                            point += 1
-                            time.sleep(1)
-                points_detected = False
+        # Loop through list of poses and move to each
+        for pose in pose_list:
+            self.move_to_calibration_pose(pose)
+            # Wait for rgb to catch up
+            time.sleep(2)
+            print "Number of points collected: ", len(kinect_points)
+            while not points_detected:
+                Bx, By, Bz, Ww, Wx, Wy, Wz = self.return_current_pose("right")
+                if (self.rgb_img is not None):
+                    try:
+                        points_detected, Kx, Ky, Kz = self.get_marker()
+                    except:
+                        points_detected = False
+                        print "Exception"
+                    if points_detected:
+                        baxter_points.append([Bx, By, Bz])
+                        kinect_points.append([Kx, Ky, Kz])
+                        print "Kinect: " + str(kinect_points[point])
+                        print "Baxter: " + str(baxter_points[point])
+                        point += 1
+                        time.sleep(1)
+            points_detected = False
             
         kinect_points = np.asmatrix(kinect_points)
         baxter_points = np.asmatrix(baxter_points)
@@ -271,6 +302,32 @@ class Control:
         left_arm_plan = self.left_arm.plan()
         self.left_arm.go()
         
+    def move_to_calibration_pose(self, pose):
+        """
+        Move Baxters right arm to the given calibration pose
+        """
+        x = pose[0]
+        y = pose[1]
+        z = pose[2]
+        Ww = pose[3]
+        Wx = pose[4]
+        Wy = pose[5]
+        Wz = pose[6]
+        
+        pose_target = self.create_pose_target(Ww,           		# Ww
+                                              Wx,           		# Wx
+                                              Wy,               	# Wy
+                                              Wz,		            # Wz
+                                              x, 		            # X
+                                              y, 					# Y
+                                              z)					# Z
+                                              
+        self.right_arm.set_goal_tolerance(0.01);
+        self.right_arm.set_planner_id("RRTConnectkConfigDefault");
+        self.right_arm.set_pose_target(pose_target)
+        right_arm_plan = self.left_arm.plan()
+        self.right_arm.go()
+        
 
     def return_current_pose(self, limb):
     	"""
@@ -285,8 +342,12 @@ class Control:
     	x = pose.pose.position.x
     	y = pose.pose.position.y
     	z = pose.pose.position.z
+    	Ww = pose.pose.orientation.w
+    	Wx = pose.pose.orientation.x
+    	Wy = pose.pose.orientation.y
+    	Wz = pose.pose.orientation.z
     	
-    	return x, y, z
+    	return x, y, z, Ww, Wx, Wy, Wz
     	
     def get_marker(self):
     
