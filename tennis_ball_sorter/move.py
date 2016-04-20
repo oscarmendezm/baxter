@@ -13,6 +13,9 @@ import sys
 import copy
 import rospy
 import moveit_commander
+from moveit_commander import MoveGroupCommander, PlanningSceneInterface
+from moveit_msgs.msg import PlanningScene, ObjectColor
+from geometry_msgs.msg import PoseStamped, Pose
 import moveit_msgs.msg
 import geometry_msgs.msg
 import time
@@ -53,7 +56,28 @@ class Control:
         self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
         self.right_arm_navigator = Navigator('right')
         
-        print self.right_arm.get_planning_frame()
+        # Setup the table in the scene
+        scene = PlanningSceneInterface()
+        self.scene_pub = rospy.Publisher('/move_group/monitored_planning_scene', PlanningScene)
+        table_id = 'table'
+        scene.remove_world_object(table_id)
+        rospy.sleep(1)
+        table_ground = -0.2
+        table_size = [0.7, 1.4, 0.1]
+        
+        table_pose = PoseStamped()
+        table_pose.header.frame_id = self.robot.get_planning_frame()
+        table_pose.pose.position.x = 0.7
+        table_pose.pose.position.y = 0.0
+        table_pose.pose.position.z = table_ground + table_size[2] / 2.0
+        table_pose.pose.orientation.w = 1.0
+        scene.add_box(table_id, table_pose, table_size)
+        
+        # Create a dictionary to hold object colors
+        self.colors = dict()
+        self.setColor(table_id, 0.8, 0, 0, 1.0)
+        
+        self.sendColors()
 
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path',
                                                             moveit_msgs.msg.DisplayTrajectory,
@@ -71,6 +95,39 @@ class Control:
                                                            moveit_msgs.msg.DisplayTrajectory,
                                                            queue_size=5)
         self.screen_pub = rospy.Publisher('robot/xdisplay', Image, latch=True, queue_size=10)
+        
+        
+        # Set the color of an object
+    def setColor(self, name, r, g, b, a = 0.9):
+        # Initialize a MoveIt color object
+        color = ObjectColor()
+
+        # Set the id to the name given as an argument
+        color.id = name
+
+        # Set the rgb and alpha values given as input
+        color.color.r = r
+        color.color.g = g
+        color.color.b = b
+        color.color.a = a
+
+        # Update the global color dictionary
+        self.colors[name] = color
+
+    # Actually send the colors to MoveIt!
+    def sendColors(self):
+        # Initialize a planning scene object
+        p = PlanningScene()
+
+        # Need to publish a planning scene diff        
+        p.is_diff = True
+
+        # Append the colors from the global color dictionary 
+        for color in self.colors.values():
+            p.object_colors.append(color)
+
+        # Publish the scene diff
+        self.scene_pub.publish(p)
 
     def callback_points(self, data):
 		"""
