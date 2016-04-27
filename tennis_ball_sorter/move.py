@@ -51,10 +51,13 @@ class Control:
         rospy.init_node('can_node', anonymous=True)
 
         self.robot = moveit_commander.RobotCommander()
+        print self.robot.get_group_names()
         self.scene = moveit_commander.PlanningSceneInterface()
         self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
         self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
         self.right_arm_navigator = Navigator('right')
+        
+        print self.right_arm.get_current_pose()
         
         # Setup the table in the scene
         scene = PlanningSceneInterface()
@@ -63,7 +66,7 @@ class Control:
         scene.remove_world_object(table_id)
         rospy.sleep(1)
         table_ground = -0.2
-        table_size = [0.7, 1.4, 0.1]
+        table_size = [0.7, 1.6, 0.1]
         
         table_pose = PoseStamped()
         table_pose.header.frame_id = self.robot.get_planning_frame()
@@ -199,7 +202,19 @@ class Control:
                      [0.59317984995 , -0.0540883002897 , 0.310744182076 , 0.289372750853 , -0.694005777143 , -0.642692851518 , -0.146851254553],
                      [0.59317984995 , -0.0540883002897 , 0.310744182076 , 0.289372750853 , -0.694005777143 , -0.642692851518 , -0.146851254553],
                      [0.635221059044 , -0.0529884621621 , 0.0615424082709 , 0.128453076828 , -0.68436490893 , -0.677004851394 , -0.238346197091],
-                     [0.736894461595 , -0.359083080285 , 0.0957591406134 , 0.230365370048 , -0.660658834617 , -0.656282894677 , -0.282408326152]]
+                     [0.736894461595 , -0.359083080285 , 0.0957591406134 , 0.230365370048 , -0.660658834617 , -0.656282894677 , -0.282408326152],
+                     [0.856433148149 , 0.253602477922 , 0.0750673498 , 0.129939125028 , -0.662539923503 , -0.604385144691 , -0.422936485099],
+                     [0.886592435991 , -0.222630274257 , -0.0165102187008 , 0.0705216181939 , 0.669922257118 , 0.538633527387 , 0.506067973655],
+                     [0.627475557154 , -0.225710668586 , -0.0365310479227 , 0.113752502392 , -0.66051150876 , -0.665590392416 , -0.328290031098],
+                     [0.980513209608 , -0.271793800941 , -0.033364794179 , 0.194009039007 , 0.661778636808 , 0.500182211874 , 0.523667149603],
+                     [1.00831495143 , -0.0252682592022 , -0.0207624126643 , 0.114046144808 , 0.709570559522 , 0.416558928179 , 0.556760053585],
+                     [0.590774701724 , 0.0750758571987 , -0.019888576087 , 0.250500571628 , -0.608117357827 , -0.623975011317 , -0.422016502018],
+                     [0.763800611378 , -0.291507187017 , -0.0152160490523 , 0.0169800649687 , 0.605627210624 , 0.620202770361 , 0.498272899907],
+                     [0.866956022804 , -0.458772059949 , -0.0235058253468 , 0.111344640732 , 0.553438276956 , 0.600254979948 , 0.56657074018],    
+                     [0.703509463272 , -0.280908223969 , -0.0597751286364 , 0.119082570328 , -0.691498466215 , -0.522213383312 , -0.484708567034],
+                     [0.91345803955 , -0.0493827381664 , -0.0277354797514 , 0.000272934611266 , -0.598020816835 , -0.548201530181 , -0.584676073091]]                    
+                     
+                     
         
         points_detected = False
         
@@ -212,6 +227,7 @@ class Control:
         
         # Loop through list of poses and move to each
         for pose in pose_list:
+
             self.move_to_calibration_pose(pose)
             # Wait for rgb to catch up
             time.sleep(2)
@@ -227,10 +243,11 @@ class Control:
                     if points_detected:
                         baxter_points.append([Bx, By, Bz])
                         kinect_points.append([Kx, Ky, Kz])
+                        print Bx, ",", By, ",", Bz, ",", Ww, ",", Wx, ",", Wy, ",", Wz
                         print "Kinect: " + str(kinect_points[point])
                         print "Baxter: " + str(baxter_points[point])
                         point += 1
-                        time.sleep(1)
+                        time.sleep(2)
             points_detected = False
             
         kinect_points = np.asmatrix(kinect_points)
@@ -247,7 +264,7 @@ class Control:
         
     def calculate_transform(self, K, B):
         # Ransac parameters
-		ransac_iterations = 2000  # Number of iterations
+		ransac_iterations = 4000  # Number of iterations
 		n_samples = len(K)
 		best_rmse = None
 		best_R = None
@@ -543,11 +560,14 @@ class Control:
 			y = new_B[0][1]
 			z = new_B[0][2]
 
-			pose_target = self.create_pose_target(0.0977083761873,		# Ww
-		                                          0.714003795927,		# Wx
-		                                          -0.00449042997044,	# Wy
-		                                          0.693275910921,		# Wz
-									 			  x, y, z)
+			pose_target = self.create_pose_target(0.705642809911,		    # Ww
+		                                          -0.0229930939041,		    # Wx
+		                                          0.708193955206,	        # Wy
+		                                          -0.000929657640434,		# Wz
+									 			  0.627849381922,            # X
+									 			  y,                         # Y
+									 			  -0.0161319119786)          # Z
+
 									 
 			self.right_arm.set_goal_tolerance(0.0001)
 			self.right_arm.set_planner_id("RRTConnectkConfigDefault")
