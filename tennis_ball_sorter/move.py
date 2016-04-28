@@ -9,6 +9,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Image, PointCloud2, PointField
 import sensor_msgs.point_cloud2 as pc2
 from baxter_interface import Navigator
+import baxter_interface
 import sys
 import copy
 import rospy
@@ -51,13 +52,16 @@ class Control:
         rospy.init_node('can_node', anonymous=True)
 
         self.robot = moveit_commander.RobotCommander()
-        print self.robot.get_group_names()
+        
         self.scene = moveit_commander.PlanningSceneInterface()
         self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
         self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
         self.right_arm_navigator = Navigator('right')
         
         print self.right_arm.get_current_pose()
+        
+        # Setup grippers
+        self.right_gripper = baxter_interface.Gripper('right')
         
         # Setup the table in the scene
         scene = PlanningSceneInterface()
@@ -243,7 +247,6 @@ class Control:
                     if points_detected:
                         baxter_points.append([Bx, By, Bz])
                         kinect_points.append([Kx, Ky, Kz])
-                        print Bx, ",", By, ",", Bz, ",", Ww, ",", Wx, ",", Wy, ",", Wz
                         print "Kinect: " + str(kinect_points[point])
                         print "Baxter: " + str(baxter_points[point])
                         point += 1
@@ -536,44 +539,40 @@ class Control:
 		Function to search the RGB image for an orange can, and then return its co-ordinates
 		"""
 		
-		while 1:
-			while raw_input("Enter: ") != "g":
-				waiting = None
-			
-			points_detected = False
+		points_detected = False
 
-			while not points_detected:
-				if (self.rgb_img is not None):
-					try:
-					    points_detected, Kx, Ky, Kz = self.get_marker()
-					except:
-					    pass           
-			            
-			kinect_point = np.array([Kx, Ky, Kz])
-		
-			print kinect_point
-			new_B = self.calculate_translated_point(kinect_point)
-		
-			new_B = np.asarray(new_B)
+		while not points_detected:
+			if (self.rgb_img is not None):
+				try:
+				    points_detected, Kx, Ky, Kz = self.get_marker()
+				except:
+				    pass           
+		            
+		kinect_point = np.array([Kx, Ky, Kz])
+	
+		print kinect_point
+		new_B = self.calculate_translated_point(kinect_point)
+	
+		new_B = np.asarray(new_B)
 
-			x = new_B[0][0]
-			y = new_B[0][1]
-			z = new_B[0][2]
+		x = new_B[0][0]
+		y = new_B[0][1]
+		z = new_B[0][2]
 
-			pose_target = self.create_pose_target(0.705642809911,		    # Ww
-		                                          -0.0229930939041,		    # Wx
-		                                          0.708193955206,	        # Wy
-		                                          -0.000929657640434,		# Wz
-									 			  0.627849381922,            # X
-									 			  y,                         # Y
-									 			  -0.0161319119786)          # Z
+		pose_target = self.create_pose_target(0.705642809911,		    # Ww
+	                                          -0.0229930939041,		    # Wx
+	                                          0.708193955206,	        # Wy
+	                                          -0.000929657640434,		# Wz
+								 			  0.627849381922,            # X
+								 			  y,                         # Y
+								 			  -0.0171319119786)          # Z
 
-									 
-			self.right_arm.set_goal_tolerance(0.0001)
-			self.right_arm.set_planner_id("RRTConnectkConfigDefault")
-			self.right_arm.set_pose_target(pose_target)
-			right_arm_plan = self.right_arm.plan()
-			self.right_arm.go()
+								 
+		self.right_arm.set_goal_tolerance(0.0001)
+		self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+		self.right_arm.set_pose_target(pose_target)
+		right_arm_plan = self.right_arm.plan()
+		self.right_arm.go()
 		
 
     def calculate_translated_point(self, K):
@@ -589,6 +588,53 @@ class Control:
     	print 'Translated Point :'
     	print B
     	return B
+    	
+    def grip_object(self):
+        """
+        Close the grippers around any sized object
+        """
+        
+        # Calibrate the gripper
+        print "calibrating"
+        self.right_gripper.calibrate()
+        
+        print "gripping"
+        # Close the gripper
+        self.right_gripper.close()
+        
+    def drop_object(self):
+        """
+        Open the grippers
+        """
+      
+        print "Releasing"
+        # Open the gripper
+        self.right_gripper.open()
+        
+    def move_can_to_bin(self):
+        """
+        Move the gripped object to a pre_determined location
+        """
+        
+        pose_target = self.create_pose_target(0.0990103850338,		    # Ww
+	                                          0.713302460175,		    # Wx
+	                                          -0.00106008311276,	        # Wy
+	                                          0.693826649955,		# Wz
+								 			  -0.0461945288628,            # X
+								 			  0.623139031453,           # Y
+								 			  0.26455245648)          # Z
+								 			  
+        self.right_arm.set_goal_tolerance(0.0001)
+        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+        self.right_arm.set_pose_target(pose_target)
+        right_arm_plan = self.right_arm.plan()
+        self.right_arm.go()
+        
+        self.drop_object()
+        
+        
+        
+        
 
 def main():
     """
@@ -598,12 +644,71 @@ def main():
 
     # Initialise the Control class to complete all operations on Baxter
     robot = Control()
-
-    # Start the calibration process to link Baxter and Kinect Coordinates
-    robot.calibrate_main()
     
-    # Search for orange can and move to that location
-    robot.manipulate_orange_can()
+    while 1:
+    
+        # Wait for keyboard to determine method
+        waiting = True
+        
+        print "c -> Calibrate"
+        print "m -> Load current transform and move to can location"
+        
+        while waiting == True:
+            usr_input = raw_input("Enter: ")
+            if usr_input == 'c':
+				    waiting = False
+				
+				    # Start the calibration process to link Baxter and Kinect Coordinates
+				    robot.calibrate_main()
+				    
+				    # Search for orange can and move to that location
+				    robot.manipulate_orange_can()
+            
+            elif usr_input == 'g':
+                waiting = False
+                
+                # Set the transform matrices
+                robot.R = [[-0.97120955, -0.08497271, 0.22255705],
+                          [-0.23768779, 0.40844356, -0.88129358],
+                          [-0.01601608, -0.90881984, -0.41688126]]
+                robot.t = [[0.50490536], [1.13662038], [0.74441346]]
+                
+                # Move left arm out of the way before gripping begins
+                robot.move_to_remove()
+        
+                # Search for orange can and move to that location
+                robot.manipulate_orange_can()
+        
+        # Wait for keyboard to determine next method
+        waiting = True
+        
+        print "g -> Grip item"
+        print "Any other Key to return to menu"
+        
+        while waiting == True:
+            usr_input = raw_input("Enter: ")
+            if usr_input == 'g':
+				    waiting = False  
+				    robot.grip_object()  
+        
+            else:
+                # Return to prvious menu
+                waiting = False
+        
+        waiting = True
+        
+        print "m -> Move Item"
+        print "d -> Drop Item"
+        
+        while waiting == True:
+            usr_input = raw_input("Enter: ")
+            if usr_input == 'm':
+				    waiting = False  
+				    robot.move_can_to_bin()
+				    
+            if usr_input == 'd':
+				    waiting = False  
+				    robot.drop_object() 
 
     # Keep the topics updating
     rospy.spin()
