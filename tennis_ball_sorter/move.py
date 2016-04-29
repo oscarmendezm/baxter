@@ -6,7 +6,8 @@ import cv
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
 from std_msgs.msg import String
-from sensor_msgs.msg import Image, PointCloud2, PointField
+import sensor_msgs
+from sensor_msgs.msg import Image, PointCloud2, PointField, Range
 import sensor_msgs.point_cloud2 as pc2
 from baxter_interface import Navigator
 import baxter_interface
@@ -57,8 +58,7 @@ class Control:
         self.left_arm = moveit_commander.MoveGroupCommander("left_arm")
         self.right_arm = moveit_commander.MoveGroupCommander("right_arm")
         self.right_arm_navigator = Navigator('right')
-        
-        print self.right_arm.get_current_pose()
+       
         
         # Setup grippers
         self.right_gripper = baxter_interface.Gripper('right')
@@ -93,7 +93,6 @@ class Control:
         # We can get a list of all the groups in the robot
         print "============ Robot GroupsPoses:"
         print self.right_arm.get_current_pose()
-        print self.left_arm.get_current_pose()
 
         # Setup the subscribers and publishers
         self.rgb_sub = rospy.Subscriber("/camera/rgb/image_rect_color", Image, self.callback_rgb)
@@ -102,6 +101,8 @@ class Control:
                                                            moveit_msgs.msg.DisplayTrajectory,
                                                            queue_size=5)
         self.screen_pub = rospy.Publisher('robot/xdisplay', Image, latch=True, queue_size=10)
+        
+        self.right_hand_range_pub = rospy.Subscriber("/robot/range/right_hand_range/state", Range, self.callback_range)
         
         
         # Set the color of an object
@@ -135,15 +136,18 @@ class Control:
 
         # Publish the scene diff
         self.scene_pub.publish(p)
+        
+    def callback_range(self, data):
+        """
+        Store the current range of the IR right hand sensor
+        """
+        
+        self.right_hand_range = data
 
     def callback_points(self, data):
 		"""
 		Function to handle the arrival of pointcloud data
 		"""
-		
-		#cloud = list(pc2.read_points(data, skip_nans=False))
-		#cloud = np.resize(cloud, [640, 480, 3])
-		#self.cloud = cloud
 		
 		cloud_msg = pc2.read_points(data, field_names = ("x", "y", "z"), skip_nans=False)
 		cloud_data = []
@@ -151,7 +155,6 @@ class Control:
 		    cloud_data.append([p[0],p[1],p[2]])
 		cloud_data = np.array(cloud_data)
 		self.cloud2 = np.reshape(cloud_data, [640, 480,3], order='F')
-		#print self.cloud2.shape
             		
     def callback_rgb(self, data):
         """
@@ -556,16 +559,16 @@ class Control:
 		new_B = np.asarray(new_B)
 
 		x = new_B[0][0]
-		y = new_B[0][1]
+		self.y = new_B[0][1]
 		z = new_B[0][2]
 
 		pose_target = self.create_pose_target(0.705642809911,		    # Ww
 	                                          -0.0229930939041,		    # Wx
 	                                          0.708193955206,	        # Wy
 	                                          -0.000929657640434,		# Wz
-								 			  0.627849381922,            # X
-								 			  y,                         # Y
-								 			  -0.0171319119786)          # Z
+								 			  0.757849381922,            # X
+								 			  self.y,                         # Y
+								 			  -0.0288319119786)          # Z
 
 								 
 		self.right_arm.set_goal_tolerance(0.0001)
@@ -573,6 +576,7 @@ class Control:
 		self.right_arm.set_pose_target(pose_target)
 		right_arm_plan = self.right_arm.plan()
 		self.right_arm.go()
+	
 		
 
     def calculate_translated_point(self, K):
@@ -594,6 +598,29 @@ class Control:
         Close the grippers around any sized object
         """
         
+        if float(self.right_hand_range.range) > 0.01:
+        
+            new_x = 0.757849381922 + float(self.right_hand_range.range - 0.01)
+            
+        else: 
+            new_x = 0.757849381922
+        
+        print new_x
+        
+        pose_target = self.create_pose_target(0.705642809911,		    # Ww
+	                                          -0.0229930939041,		    # Wx
+	                                          0.708193955206,	        # Wy
+	                                          -0.000929657640434,		# Wz
+								 			  new_x,                    # X
+								 			  self.y,                         # Y
+								 			  -0.0288319119786)          # Z
+								 			  
+        self.right_arm.set_goal_tolerance(0.0001)
+        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+        self.right_arm.set_pose_target(pose_target)
+        right_arm_plan = self.right_arm.plan()
+        self.right_arm.go()
+        
         # Calibrate the gripper
         print "calibrating"
         self.right_gripper.calibrate()
@@ -611,18 +638,40 @@ class Control:
         # Open the gripper
         self.right_gripper.open()
         
+    def identify_brand(self):
+        """
+        Identify the brand of the can using its colour
+        """
+        
+        # Move the can so that Baxters head camera can view it
+        
+        pose_target = self.create_pose_target(0.390264310952,		    # Ww
+	                                          -0.4519559915,		    # Wx
+	                                          0.407590677453,	        # Wy
+	                                          0.690868575778,   		# Wz
+								 			  0.460306296397,            # X
+								 			  -0.181465448894,           # Y
+								 			  0.528724818165)          # Z
+								 			  
+        self.right_arm.set_goal_tolerance(0.0001)
+        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+        self.right_arm.set_pose_target(pose_target)
+        right_arm_plan = self.right_arm.plan()
+        self.right_arm.go()
+        
+        
     def move_can_to_bin(self):
         """
         Move the gripped object to a pre_determined location
         """
         
-        pose_target = self.create_pose_target(0.0990103850338,		    # Ww
-	                                          0.713302460175,		    # Wx
-	                                          -0.00106008311276,	        # Wy
-	                                          0.693826649955,		# Wz
-								 			  -0.0461945288628,            # X
-								 			  0.623139031453,           # Y
-								 			  0.26455245648)          # Z
+        pose_target = self.create_pose_target(0.595552795507,		    # Ww
+	                                          -0.402736166486,		    # Wx
+	                                          0.606073515679,	    # Wy
+	                                          0.340287145747,		    # Wz
+								 			  0.771553488123,         # X
+								 			  0.318602280105,           # Y
+								 			  0.263525150839)            # Z
 								 			  
         self.right_arm.set_goal_tolerance(0.0001)
         self.right_arm.set_planner_id("RRTConnectkConfigDefault")
@@ -632,6 +681,24 @@ class Control:
         
         self.drop_object()
         
+    def move_right_to_neutral(self):
+        """
+        Move the right arm to it's neutral position
+        """
+        
+        pose_target = self.create_pose_target(0.0194490701404,		    # Ww
+	                                          0.0532674104646,		    # Wx
+	                                          0.997887473793,	    # Wy
+	                                          0.0317002570828,		    # Wz
+								 			  0.557041277551,         # X
+								 			  -0.723330201644,           # Y
+								 			  0.262966200216)            # Z
+								 			  
+        self.right_arm.set_goal_tolerance(0.0001)
+        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+        self.right_arm.set_pose_target(pose_target)
+        right_arm_plan = self.right_arm.plan()
+        self.right_arm.go()
         
         
         
@@ -689,26 +756,34 @@ def main():
             usr_input = raw_input("Enter: ")
             if usr_input == 'g':
 				    waiting = False  
-				    robot.grip_object()  
+				    robot.grip_object() 
+				    
+				    waiting = True
+				    
+				    print "m -> Move Item"
+				    print "d -> Drop Item"
+				    
+				    while waiting == True:
+				        usr_input = raw_input("Enter: ")
+				        if usr_input == 'm':
+				            waiting = False
+				            robot.identify_brand()
+				            robot.move_can_to_bin()
+				            time.sleep(1)
+				            robot.move_right_to_neutral()
+				            
+				            
+				        if usr_input == 'd':
+				            waiting = False
+				            robot.drop_object()  
+				            time.sleep(1)
+				            robot.move_right_to_neutral()
         
             else:
                 # Return to prvious menu
                 waiting = False
         
-        waiting = True
         
-        print "m -> Move Item"
-        print "d -> Drop Item"
-        
-        while waiting == True:
-            usr_input = raw_input("Enter: ")
-            if usr_input == 'm':
-				    waiting = False  
-				    robot.move_can_to_bin()
-				    
-            if usr_input == 'd':
-				    waiting = False  
-				    robot.drop_object() 
 
     # Keep the topics updating
     rospy.spin()
