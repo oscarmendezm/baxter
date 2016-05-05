@@ -70,7 +70,7 @@ class Control:
         scene.remove_world_object(table_id)
         rospy.sleep(1)
         table_ground = -0.2
-        table_size = [0.7, 1.6, 0.1]
+        table_size = [2.0, 2.6, 0.1]
         
         table_pose = PoseStamped()
         table_pose.header.frame_id = self.robot.get_planning_frame()
@@ -597,29 +597,28 @@ class Control:
         """
         Close the grippers around any sized object
         """
+        new_x = 0.757849381922
         
-        if float(self.right_hand_range.range) > 0.01:
+        while float(self.right_hand_range.range) > 0.14:
         
-            new_x = 0.757849381922 + float(self.right_hand_range.range - 0.01)
+            print float(self.right_hand_range.range)
+            new_x += 0.01
+        
+            pose_target = self.create_pose_target(0.705642809911,		    # Ww
+	                                              -0.0229930939041,		    # Wx
+	                                              0.708193955206,	        # Wy
+	                                              -0.000929657640434,		# Wz
+								     			  new_x,                    # X
+								     			  self.y,                   # Y
+								     			  -0.0288319119786)         # Z
+								     			  
+            self.right_arm.set_goal_tolerance(0.0001)
+            self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+            self.right_arm.set_pose_target(pose_target)
+            right_arm_plan = self.right_arm.plan()
+            self.right_arm.go()
             
-        else: 
-            new_x = 0.757849381922
-        
-        print new_x
-        
-        pose_target = self.create_pose_target(0.705642809911,		    # Ww
-	                                          -0.0229930939041,		    # Wx
-	                                          0.708193955206,	        # Wy
-	                                          -0.000929657640434,		# Wz
-								 			  new_x,                    # X
-								 			  self.y,                         # Y
-								 			  -0.0288319119786)          # Z
-								 			  
-        self.right_arm.set_goal_tolerance(0.0001)
-        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
-        self.right_arm.set_pose_target(pose_target)
-        right_arm_plan = self.right_arm.plan()
-        self.right_arm.go()
+        print float(self.right_hand_range.range)
         
         # Calibrate the gripper
         print "calibrating"
@@ -645,13 +644,13 @@ class Control:
         
         # Move the can so that Baxters head camera can view it
         
-        pose_target = self.create_pose_target(0.390264310952,		    # Ww
-	                                          -0.4519559915,		    # Wx
-	                                          0.407590677453,	        # Wy
-	                                          0.690868575778,   		# Wz
-								 			  0.460306296397,            # X
-								 			  -0.181465448894,           # Y
-								 			  0.528724818165)          # Z
+        pose_target = self.create_pose_target(0.0275059232036,		    # Ww
+	                                          -0.545716390233,		    # Wx
+	                                          -0.00107502098449,	    # Wy
+	                                          0.837517695305,   		# Wz
+								 			  0.497076790478,            # X
+								 			  -0.0322915982276,           # Y
+								 			  0.592466205731)          # Z
 								 			  
         self.right_arm.set_goal_tolerance(0.0001)
         self.right_arm.set_planner_id("RRTConnectkConfigDefault")
@@ -716,6 +715,8 @@ def main():
     
         # Wait for keyboard to determine method
         waiting = True
+        
+        robot.move_right_to_neutral()
         
         print "c -> Calibrate"
         print "m -> Load current transform and move to can location"
