@@ -91,8 +91,11 @@ class Control:
                                                             queue_size=10)
 
         # We can get a list of all the groups in the robot
-        print "============ Robot GroupsPoses:"
+        print "============ Right Pose:"
         print self.right_arm.get_current_pose()
+        
+        print "============ Left Pose:"
+        print self.left_arm.get_current_pose()
 
         # Setup the subscribers and publishers
         self.rgb_sub = rospy.Subscriber("/camera/rgb/image_rect_color", Image, self.callback_rgb)
@@ -103,6 +106,8 @@ class Control:
         self.screen_pub = rospy.Publisher('robot/xdisplay', Image, latch=True, queue_size=10)
         
         self.right_hand_range_pub = rospy.Subscriber("/robot/range/right_hand_range/state", Range, self.callback_range, queue_size=1)
+        
+        self.left_cam_sub = rospy.Subscriber("/cameras/left_hand_camera/image", Image, self.callback_left_hand)
         
         
         # Set the color of an object
@@ -143,6 +148,18 @@ class Control:
         """
         
         self.right_hand_range = data
+        
+    def callback_left_hand(self,data):
+        """
+        Callback to handle image from left hand camera
+        """
+        
+         # Convert the data to a usable format
+        self.left_hand_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        
+        # Use the left hand camera to identify colour
+        cv2.imshow("left", self.left_hand_img)
+        cv2.waitKey(2)
 
     def callback_points(self, data):
 		"""
@@ -219,9 +236,6 @@ class Control:
         points_detected = False
         
         point = 0
-        
-        # Move the left arm out of the way for calibration
-        self.move_to_remove()
         
         print "\n\nStaring Calibration:"
         
@@ -593,11 +607,11 @@ class Control:
         """
         new_x = 0.757849381922
         
-        while float(self.right_hand_range.range) > 0.15:
+        while float(self.right_hand_range.range) > 0.1:
         
-            print float(self.right_hand_range.range)
-            
             if float(self.right_hand_range.range) < 10:
+            
+                print float(self.right_hand_range.range)
                 new_x += 0.01
                 
                 print float(self.right_hand_range.range)
@@ -640,21 +654,44 @@ class Control:
         Identify the brand of the can using its colour
         """
         
-        # Move the can so that Baxters head camera can view it
+        # Move the can so baxters left arm can see it
         
-        pose_target = self.create_pose_target(0.0275059232036,		    # Ww
-	                                          -0.545716390233,		    # Wx
-	                                          -0.00107502098449,	    # Wy
-	                                          0.837517695305,   		# Wz
-								 			  0.497076790478,            # X
-								 			  -0.0322915982276,           # Y
-								 			  0.592466205731)          # Z
+        pose_target = self.create_pose_target(0.459579094092,		    # Ww
+	                                          -0.526618773291,		    # Wx
+	                                          0.526858854386,   	    # Wy
+	                                          0.483610867792,   		# Wz
+								 			  0.525552632416,            # X
+								 			  -0.179808145256,           # Y
+								 			  0.559583765188)          # Z
 								 			  
         self.right_arm.set_goal_tolerance(0.0001)
         self.right_arm.set_planner_id("RRTConnectkConfigDefault")
         self.right_arm.set_pose_target(pose_target)
         right_arm_plan = self.right_arm.plan()
         self.right_arm.go()
+        
+        pose_target = self.create_pose_target(0.477334952959,		    # Ww
+	                                          0.529770117458,		    # Wx
+	                                          0.437533990701,   	    # Wy
+	                                          -0.547776388971,   		# Wz
+								 			  0.545503941288,            # X
+								 			  0.136721002146,           # Y
+								 			  0.517426262626)          # Z
+								 			  
+        self.left_arm.set_goal_tolerance(0.0001)
+        self.left_arm.set_planner_id("RRTConnectkConfigDefault")
+        self.left_arm.set_pose_target(pose_target)
+        left_arm_plan = self.left_arm.plan()
+        self.left_arm.go()
+        
+        # wait for image to catch up.
+        time.sleep(2)
+        
+        # Crop the image region
+        cropped = self.left_hand_img[80:470, 210:400]
+        
+        mean = np.mean(cropped)
+        print mean
         
         
     def move_can_to_bin(self):
@@ -721,6 +758,7 @@ def main():
         waiting = True
         
         robot.move_right_to_neutral()
+        robot.move_to_remove()
         
         while waiting == True:
             print "c -> Calibrate"
@@ -733,6 +771,7 @@ def main():
 				    
 				    # Move the right arm out of the way again
 				    robot.move_right_to_neutral()
+				    robot.move_to_remove()
             
             elif usr_input == 'm':
                 waiting = False
@@ -775,6 +814,7 @@ def main():
 				            robot.drop_object()  
 				            time.sleep(1)
 				            robot.move_right_to_neutral()
+				            robot.move_to_remove()
         
             else:
                 # Return to prvious menu
