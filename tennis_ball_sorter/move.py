@@ -157,9 +157,6 @@ class Control:
          # Convert the data to a usable format
         self.left_hand_img = self.bridge.imgmsg_to_cv2(data, "bgr8")
         
-        # Use the left hand camera to identify colour
-        cv2.imshow("left", self.left_hand_img)
-        cv2.waitKey(2)
 
     def callback_points(self, data):
 		"""
@@ -687,31 +684,56 @@ class Control:
         # wait for image to catch up.
         time.sleep(2)
         
-        # Crop the image region
+        # Crop the image region and work out mean
         cropped = self.left_hand_img[80:470, 210:400]
-        
         mean = np.mean(cropped)
-        print mean
+        
+        if mean > 40:
+            self.move_can_to_bin(1)
+            
+        else:
+            self.move_can_to_bin(2)
+            
         
         
-    def move_can_to_bin(self):
+        
+    def move_can_to_bin(self, loc):
         """
         Move the gripped object to a pre_determined location
         """
         
-        pose_target = self.create_pose_target(0.595552795507,		    # Ww
-	                                          -0.402736166486,		    # Wx
-	                                          0.606073515679,	    # Wy
-	                                          0.340287145747,		    # Wz
-								 			  0.771553488123,         # X
-								 			  0.318602280105,           # Y
-								 			  0.263525150839)            # Z
-								 			  
-        self.right_arm.set_goal_tolerance(0.0001)
-        self.right_arm.set_planner_id("RRTConnectkConfigDefault")
-        self.right_arm.set_pose_target(pose_target)
-        right_arm_plan = self.right_arm.plan()
-        self.right_arm.go()
+        # Move can to relevant location
+        if loc is 1:
+        
+            pose_target = self.create_pose_target(0.595552795507,		    # Ww
+	                                              -0.402736166486,		    # Wx
+	                                              0.606073515679,	    # Wy
+	                                              0.340287145747,		    # Wz
+								     			  0.771553488123,         # X
+								     			  0.318602280105,           # Y
+								     			  0.263525150839)            # Z
+								     			  
+            self.right_arm.set_goal_tolerance(0.0001)
+            self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+            self.right_arm.set_pose_target(pose_target)
+            right_arm_plan = self.right_arm.plan()
+            self.right_arm.go()
+            
+        else:
+            pose_target = self.create_pose_target(0.542955551491,		    # Ww
+	                                              0.305607407284,		    # Wx
+	                                              0.606073515679,	    # Wy
+	                                              0.340287145747,		    # Wz
+								     			  0.578746977737,         # X
+								     			  -1.03458398898,           # Y
+								     			  0.0870681666064)            # Z
+								     			  
+            self.right_arm.set_goal_tolerance(0.0001)
+            self.right_arm.set_planner_id("RRTConnectkConfigDefault")
+            self.right_arm.set_pose_target(pose_target)
+            right_arm_plan = self.right_arm.plan()
+            self.right_arm.go()
+        
         
         self.drop_object()
         
@@ -804,7 +826,6 @@ def main():
 				        if usr_input == 'm':
 				            waiting = False
 				            robot.identify_brand()
-				            robot.move_can_to_bin()
 				            time.sleep(1)
 				            robot.move_right_to_neutral()
 				            
