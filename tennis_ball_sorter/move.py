@@ -564,7 +564,7 @@ class Control:
 		new_B = np.asarray(new_B)
 
 		x = new_B[0][0]
-		self.y = new_B[0][1]
+		self.y = new_B[0][1] + 0.097
 		z = new_B[0][2]
 
 		pose_target = self.create_pose_target(0.705642809911,		    # Ww
@@ -602,6 +602,8 @@ class Control:
         """
         Close the grippers around any sized object
         """
+        self.right_gripper.open()
+        
         new_x = 0.757849381922
         
         while float(self.right_hand_range.range) > 0.1:
@@ -659,7 +661,7 @@ class Control:
 	                                          0.483610867792,   		# Wz
 								 			  0.525552632416,            # X
 								 			  -0.179808145256,           # Y
-								 			  0.559583765188)          # Z
+								 			  0.559583765189)          # Z
 								 			  
         self.right_arm.set_goal_tolerance(0.0001)
         self.right_arm.set_planner_id("RRTConnectkConfigDefault")
@@ -667,13 +669,14 @@ class Control:
         right_arm_plan = self.right_arm.plan()
         self.right_arm.go()
         
-        pose_target = self.create_pose_target(0.477334952959,		    # Ww
-	                                          0.529770117458,		    # Wx
-	                                          0.437533990701,   	    # Wy
-	                                          -0.547776388971,   		# Wz
-								 			  0.545503941288,            # X
-								 			  0.136721002146,           # Y
-								 			  0.517426262626)          # Z
+        
+        pose_target = self.create_pose_target(0.477457561703,		    # Ww
+	                                          0.538641679605,		    # Wx
+	                                          0.496295434842,   	    # Wy
+	                                          -0.485376409728,   		# Wz
+								 			  0.54700109441,            # X
+								 			  0.144138140554,           # Y
+								 			  0.525005607012)          # Z
 								 			  
         self.left_arm.set_goal_tolerance(0.0001)
         self.left_arm.set_planner_id("RRTConnectkConfigDefault")
@@ -688,7 +691,13 @@ class Control:
         cropped = self.left_hand_img[80:470, 210:400]
         mean = np.mean(cropped)
         
-        if mean > 40:
+        time.sleep(1)
+        
+        self.move_to_remove()
+        
+        time.sleep (1)
+        
+        if mean > 45:
             self.move_can_to_bin(1)
             
         else:
@@ -704,7 +713,7 @@ class Control:
         
         # Move can to relevant location
         if loc is 1:
-        
+            # Gold Can
             pose_target = self.create_pose_target(0.595552795507,		    # Ww
 	                                              -0.402736166486,		    # Wx
 	                                              0.606073515679,	    # Wy
@@ -720,13 +729,14 @@ class Control:
             self.right_arm.go()
             
         else:
-            pose_target = self.create_pose_target(0.542955551491,		    # Ww
-	                                              0.305607407284,		    # Wx
-	                                              0.606073515679,	    # Wy
-	                                              0.340287145747,		    # Wz
-								     			  0.578746977737,         # X
-								     			  -1.03458398898,           # Y
-								     			  0.0870681666064)            # Z
+            # Black/Blue can
+            pose_target = self.create_pose_target(0.575874166982,		    # Ww
+	                                              0.309178325864,		    # Wx
+	                                              0.683713462965,	    # Wy
+	                                              -0.324520580517,		    # Wz
+								     			  0.6665828906,         # X
+								     			  -1.10438377753,           # Y
+								     			  0.164512813294)            # Z
 								     			  
             self.right_arm.set_goal_tolerance(0.0001)
             self.right_arm.set_planner_id("RRTConnectkConfigDefault")
@@ -769,10 +779,11 @@ def main():
     robot = Control()
     
     # Set the transform matrices
-    robot.R = [[-0.97120955, -0.08497271, 0.22255705],
-              [-0.23768779, 0.40844356, -0.88129358],
-              [-0.01601608, -0.90881984, -0.41688126]]
-    robot.t = [[0.50490536], [1.13662038], [0.74441346]]
+    robot.R = [[-0.98980833,  0.07509671, 0.12099568],
+                [-0.08007363,  0.40911359, -0.9089633 ],
+                [-0.11776113, -0.90938801, -0.39893077]]
+
+    robot.t = [[ 0.41756282], [ 1.25144796], [ 0.69034295]]
     
     while 1:
     
