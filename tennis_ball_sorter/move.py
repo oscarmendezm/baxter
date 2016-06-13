@@ -468,11 +468,24 @@ class Control:
         self.marker_center_y = None
         
         # View only the yellow colours in the image
+
+       
+        
+        # 203, 134, 107 
+        
         hsv = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2HSV)
-        lower = np.array([20, 100, 100], dtype=np.uint8)
-        upper = np.array([100, 255, 255], dtype=np.uint8)
+        #print hsv[350][200]
+        #self.rgb_img[350][200] = [255, 255, 255]
+        lower = np.array([0, 90, 50], dtype=np.uint8)
+        upper = np.array([15, 130, 255], dtype=np.uint8)
         mask = cv2.inRange(hsv, lower, upper)
         yellow_img = cv2.bitwise_and(self.rgb_img, self.rgb_img, mask=mask)
+        
+
+        
+        #cv2.imshow("ImgHSV", hsv)
+        #cv2.imshow("MASK", mask)
+        #cv2.waitKey(3)
 
         # Erode the image a few times in order to separate close objects
         element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
